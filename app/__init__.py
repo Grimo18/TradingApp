@@ -1,0 +1,1 @@
+"""Pacchetto principale dell'app."""
