@@ -9,7 +9,7 @@ from app.analytics import extract_strategy_metrics
 from app.market_data import compute_market_metrics, get_market_snapshot, get_price_history
 from app.report import generate_html_report
 from app.storage import save_metrics
-from app.strategy import ATHDipStrategy
+from app.strategy import STRATEGIES
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +20,30 @@ def _safe_call(callbacks, name, *args):
         callback(*args)
 
 
-def esegui_backtest(ticker, capitale, callbacks):
+def esegui_backtest(ticker, capitale, start, end, nome_strategia, callbacks):
     """Esegue il backtest e notifica la UI tramite callback.
 
-    callbacks: dict con chiavi "status", "progress_start", "progress_stop",
-    "market", "running", "details", "metrics", "report", "chart",
-    "strategy_metrics", "metrics_files".
+    Args:
+        ticker: simbolo dell'asset
+        capitale: capitale iniziale
+        start: data inizio come datetime.datetime
+        end: data fine come datetime.datetime
+        nome_strategia: nome della strategia da usare (chiave del dizionario STRATEGIES)
+        callbacks: dict con chiavi "status", "progress_start", "progress_stop",
+                   "market", "running", "details", "metrics", "report", "chart",
+                   "strategy_metrics", "metrics_files".
     """
 
-    start = datetime.date(2020, 1, 1)
-    end = datetime.date.today()
+    # Seleziona la classe strategia dal dizionario
+    if nome_strategia not in STRATEGIES:
+        _safe_call(callbacks, "status", f"Strategia '{nome_strategia}' non trovata")
+        _safe_call(callbacks, "running", False)
+        return
+
+    StrategyClass = STRATEGIES[nome_strategia]
 
     _safe_call(callbacks, "running", True)
-    details = {"ticker": ticker, "capital": capitale, "start": start, "end": end}
+    details = {"ticker": ticker, "capital": capitale, "start": start.date(), "end": end.date()}
     _safe_call(callbacks, "details", details)
     _safe_call(callbacks, "status", "Simulazione in corso...")
     _safe_call(callbacks, "progress_start")
@@ -46,7 +57,7 @@ def esegui_backtest(ticker, capitale, callbacks):
     metrics = None
     history = None
     try:
-        history = get_price_history(ticker, start=start, end=end)
+        history = get_price_history(ticker, start=start.date(), end=end.date())
         metrics = compute_market_metrics(history["Close"])
         _safe_call(callbacks, "metrics", metrics)
     except Exception as exc:
@@ -57,10 +68,11 @@ def esegui_backtest(ticker, capitale, callbacks):
         _safe_call(callbacks, "chart", close_series.tolist())
 
     try:
-        result = ATHDipStrategy.backtest(
+        # Lumibot richiede datetime.datetime per backtesting_start e backtesting_end
+        result = StrategyClass.backtest(
             YahooDataBacktesting,
-            start,
-            end,
+            start,  # ora è datetime.datetime
+            end,    # ora è datetime.datetime
             parameters={"symbol": ticker},
             show_tearsheet=True,
             initial_cash=capitale,

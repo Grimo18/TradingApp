@@ -100,20 +100,29 @@ class TradingApp:
         )
         self.entry_capitale.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 10))
 
-        label_asset = ctk.CTkLabel(card_left, text="Asset", font=self.body_font)
-        label_asset.grid(row=3, column=0, sticky="w", padx=16, pady=(4, 2))
+        label_ticker = ctk.CTkLabel(card_left, text="Ticker", font=self.body_font)
+        label_ticker.grid(row=3, column=0, sticky="w", padx=16, pady=(4, 2))
 
-        self.option_asset = ctk.CTkOptionMenu(
-            card_left,
-            values=["GLD", "SPY", "AAPL", "SLV"],
-            height=36,
-            corner_radius=10,
-            fg_color=config.COLOR_HEADER,
-            button_color=config.COLOR_ACCENT,
-            button_hover_color=config.COLOR_ACCENT_HOVER,
+        self.entry_ticker = ctk.CTkEntry(
+            card_left, placeholder_text="SPY", height=36, corner_radius=10
         )
-        self.option_asset.set("SPY")
-        self.option_asset.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 12))
+        self.entry_ticker.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 10))
+
+        label_start = ctk.CTkLabel(card_left, text="Data Inizio (YYYY-MM-DD)", font=self.body_font)
+        label_start.grid(row=5, column=0, sticky="w", padx=16, pady=(4, 2))
+
+        self.entry_start = ctk.CTkEntry(
+            card_left, placeholder_text="2020-01-01", height=36, corner_radius=10
+        )
+        self.entry_start.grid(row=6, column=0, sticky="ew", padx=16, pady=(0, 10))
+
+        label_end = ctk.CTkLabel(card_left, text="Data Fine (YYYY-MM-DD)", font=self.body_font)
+        label_end.grid(row=7, column=0, sticky="w", padx=16, pady=(4, 2))
+
+        self.entry_end = ctk.CTkEntry(
+            card_left, placeholder_text="2024-01-01", height=36, corner_radius=10
+        )
+        self.entry_end.grid(row=8, column=0, sticky="ew", padx=16, pady=(0, 10))
 
         label_regole = ctk.CTkLabel(
             card_left,
@@ -126,7 +135,7 @@ class TradingApp:
             text_color=config.COLOR_TEXT_SUBTLE,
             justify="left",
         )
-        label_regole.grid(row=5, column=0, sticky="w", padx=16, pady=(0, 12))
+        label_regole.grid(row=9, column=0, sticky="w", padx=16, pady=(0, 12))
 
         self.bottone_avvio = ctk.CTkButton(
             card_left,
@@ -137,7 +146,7 @@ class TradingApp:
             hover_color=config.COLOR_ACCENT_HOVER,
             command=self._on_start,
         )
-        self.bottone_avvio.grid(row=6, column=0, sticky="ew", padx=16, pady=(4, 16))
+        self.bottone_avvio.grid(row=10, column=0, sticky="ew", padx=16, pady=(4, 16))
 
         label_stato_titolo = ctk.CTkLabel(
             card_right, text="Stato", font=self.section_font
@@ -542,8 +551,29 @@ class TradingApp:
             self.label_stato.configure(text="Capitale non valido.")
             return
 
+        # Ottieni ticker (se vuoto usa placeholder)
+        ticker = self.entry_ticker.get().strip() or "SPY"
+
+        # Ottieni strategia selezionata
+        nome_strategia = self.option_strategy.get()
+
+        # Validazione e parsing date
+        import datetime
+        try:
+            start_str = self.entry_start.get().strip() or "2020-01-01"
+            end_str = self.entry_end.get().strip() or str(datetime.date.today())
+            
+            # Converte stringhe in datetime.datetime
+            start = datetime.datetime.strptime(start_str, "%Y-%m-%d")
+            end = datetime.datetime.strptime(end_str, "%Y-%m-%d")
+            
+            if start >= end:
+                raise ValueError("Data inizio deve essere prima della data fine")
+        except ValueError as exc:
+            self.label_stato.configure(text=f"Date non valide: {exc}")
+            return
+
         self._reset_results()
-        ticker = self.option_asset.get()
 
         callbacks = {
             "status": self._set_status,
@@ -559,9 +589,9 @@ class TradingApp:
             "metrics_files": self._set_metrics_files,
         }
 
-        # Avvio del backtest in un thread separato
+        # Avvio del backtest in un thread separato con strategia selezionata
         thread = threading.Thread(
-            target=esegui_backtest, args=(ticker, capitale, callbacks), daemon=True
+            target=esegui_backtest, args=(ticker, capitale, start, end, nome_strategia, callbacks), daemon=True
         )
         thread.start()
 
