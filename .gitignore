@@ -1,0 +1,11 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local data/cache/logs
+cache/
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
