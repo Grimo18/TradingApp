@@ -1,19 +1,14 @@
-"""Interfaccia grafica CustomTkinter."""
+"""Interfaccia grafica CustomTkinter V3.1 (Fix Stato Pulsanti)."""
 
-import os
 import threading
-import tkinter as tk
-import webbrowser
-
+import datetime
 import customtkinter as ctk
 
 from app import config
 from app.backtest import esegui_backtest
-
+from app.mt5_engine import gestisci_connessione, aggiorna_parametri_e_avvia, ferma_trading, spegni_tutto
 
 class TradingApp:
-    """GUI principale con gestione del backtest in thread separato."""
-
     def __init__(self):
         ctk.set_appearance_mode(config.APPEARANCE_MODE)
         ctk.set_default_color_theme(config.COLOR_THEME)
@@ -26,574 +21,201 @@ class TradingApp:
 
         self._setup_fonts()
         self._build_layout()
+        self._log_to_terminal("TERMINALE PRONTO. In attesa di selezione modalità...")
 
     def _setup_fonts(self):
-        # Tipografia coerente per un look professionale
-        self.title_font = ctk.CTkFont(family="Segoe UI", size=24, weight="bold")
-        self.subtitle_font = ctk.CTkFont(family="Segoe UI", size=13)
-        self.section_font = ctk.CTkFont(family="Segoe UI", size=14, weight="bold")
-        self.body_font = ctk.CTkFont(family="Segoe UI", size=12)
+        self.title_font = ctk.CTkFont(family="Inter", size=28, weight="bold")
+        self.subtitle_font = ctk.CTkFont(family="Inter", size=13)
+        self.section_font = ctk.CTkFont(family="Inter", size=15, weight="bold")
+        self.body_font = ctk.CTkFont(family="Inter", size=13)
+        self.metric_font = ctk.CTkFont(family="Inter", size=24, weight="bold")
+        self.term_font = ctk.CTkFont(family="Consolas", size=13)
 
     def _build_layout(self):
         self.app.grid_rowconfigure(0, weight=1)
         self.app.grid_columnconfigure(0, weight=1)
 
-        root = ctk.CTkFrame(self.app, fg_color=config.COLOR_PANEL, corner_radius=20)
-        root.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
-        root.grid_rowconfigure(1, weight=1)
+        root = ctk.CTkScrollableFrame(self.app, fg_color=config.COLOR_PANEL, corner_radius=0)
+        root.grid(row=0, column=0, sticky="nsew")
         root.grid_columnconfigure(0, weight=1)
 
-        header = ctk.CTkFrame(root, fg_color=config.COLOR_HEADER, corner_radius=18)
-        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 12))
+        # HEADER
+        header = ctk.CTkFrame(root, fg_color=config.COLOR_HEADER, corner_radius=0)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 20))
         header.grid_columnconfigure(0, weight=1)
 
-        label_titolo = ctk.CTkLabel(header, text=config.APP_TITLE, font=self.title_font)
-        label_titolo.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 2))
+        ctk.CTkLabel(header, text=config.APP_TITLE, font=self.title_font).grid(row=0, column=0, sticky="w", padx=30, pady=(20, 2))
+        ctk.CTkLabel(header, text="Cloud AI + MT5 Execution Engine", font=self.subtitle_font, text_color=config.COLOR_TEXT_SUBTLE).grid(row=1, column=0, sticky="w", padx=30, pady=(0, 20))
 
-        label_sottotitolo = ctk.CTkLabel(
-            header,
-            text="Backtest automatico con strategia ATH dip",
-            font=self.subtitle_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-        )
-        label_sottotitolo.grid(row=1, column=0, sticky="w", padx=18, pady=(0, 14))
+        self.seg_mode = ctk.CTkSegmentedButton(header, values=["SIMULAZIONE", "LIVE DEMO", "SOLDI REALI"], command=self._change_mode)
+        self.seg_mode.set("SIMULAZIONE")
+        self.seg_mode.grid(row=0, column=1, rowspan=2, sticky="e", padx=30)
 
+        # CORPO CENTRALE
         body = ctk.CTkFrame(root, fg_color="transparent")
-        body.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
+        body.grid(row=1, column=0, sticky="nsew", padx=30)
         body.grid_columnconfigure(0, weight=1)
-        body.grid_columnconfigure(1, weight=1)
-        body.grid_rowconfigure(0, weight=3)
-        body.grid_rowconfigure(1, weight=1)
+        body.grid_columnconfigure(1, weight=2)
 
-        card_left = ctk.CTkFrame(
-            body,
-            fg_color=config.COLOR_CARD,
-            corner_radius=16,
-            border_width=1,
-            border_color=config.COLOR_BORDER,
-        )
-        card_left.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=6)
+        # SINISTRA: IMPOSTAZIONI
+        card_left = ctk.CTkFrame(body, fg_color=config.COLOR_CARD, corner_radius=12)
+        card_left.grid(row=0, column=0, sticky="nsew", padx=(0, 15), pady=10)
         card_left.grid_columnconfigure(0, weight=1)
 
-        card_right = ctk.CTkFrame(
-            body,
-            fg_color=config.COLOR_CARD,
-            corner_radius=16,
-            border_width=1,
-            border_color=config.COLOR_BORDER,
-        )
-        card_right.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=6)
+        ctk.CTkLabel(card_left, text="PARAMETRI", font=self.section_font, text_color=config.COLOR_ACCENT).grid(row=0, column=0, sticky="w", padx=20, pady=(20, 15))
+
+        self.entry_capitale = ctk.CTkEntry(card_left, placeholder_text="Capitale ($)", height=40, border_width=0, fg_color=config.COLOR_PANEL)
+        self.entry_capitale.grid(row=1, column=0, sticky="ew", padx=20, pady=5)
+
+        self.option_strategy = ctk.CTkOptionMenu(card_left, values=["ATH Dip", "SMA Cross", "RSI Mean"], height=40, fg_color=config.COLOR_PANEL, button_color=config.COLOR_ACCENT)
+        self.option_strategy.grid(row=2, column=0, sticky="ew", padx=20, pady=5)
+
+        # SMART SEARCH BAR
+        self.frame_ticker = ctk.CTkFrame(card_left, fg_color="transparent")
+        self.frame_ticker.grid(row=3, column=0, sticky="ew", padx=20, pady=5)
+        self.frame_ticker.grid_columnconfigure(0, weight=1)
+
+        self.combo_ticker = ctk.CTkComboBox(self.frame_ticker, values=["EURUSD", "BTCUSD"], height=40, fg_color=config.COLOR_PANEL, border_width=0, button_color=config.COLOR_ACCENT)
+        self.combo_ticker.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        self.combo_ticker.set("EURUSD")
+        self.combo_ticker.bind("<Return>", lambda event: self._cerca_ticker_ui())
+
+        self.btn_cerca = ctk.CTkButton(self.frame_ticker, text="🔍", width=40, height=40, font=self.section_font, fg_color=config.COLOR_PANEL, hover_color=config.COLOR_ACCENT, command=self._cerca_ticker_ui)
+        self.btn_cerca.grid(row=0, column=1)
+
+        # Date per la Simulazione
+        self.frame_date = ctk.CTkFrame(card_left, fg_color="transparent")
+        self.frame_date.grid(row=4, column=0, sticky="ew", padx=20, pady=5)
+        self.frame_date.grid_columnconfigure((0,1), weight=1)
+        self.entry_start = ctk.CTkEntry(self.frame_date, placeholder_text="Start (YYYY-MM-DD)", height=40, border_width=0, fg_color=config.COLOR_PANEL)
+        self.entry_start.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        self.entry_end = ctk.CTkEntry(self.frame_date, placeholder_text="End (YYYY-MM-DD)", height=40, border_width=0, fg_color=config.COLOR_PANEL)
+        self.entry_end.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        # Bottone di Avvio
+        self.bottone_avvio = ctk.CTkButton(card_left, text="▶ AVVIA BACKTEST", height=50, font=self.section_font, fg_color=config.COLOR_ACCENT, hover_color=config.COLOR_ACCENT_HOVER, command=self._on_start_btn)
+        self.bottone_avvio.grid(row=5, column=0, sticky="ew", padx=20, pady=(20, 20))
+
+        # DESTRA: PORTAFOGLIO E TERMINALE
+        card_right = ctk.CTkFrame(body, fg_color=config.COLOR_CARD, corner_radius=12)
+        card_right.grid(row=0, column=1, sticky="nsew", padx=(15, 0), pady=10)
         card_right.grid_columnconfigure(0, weight=1)
 
-        label_impostazioni = ctk.CTkLabel(
-            card_left, text="Impostazioni", font=self.section_font
-        )
-        label_impostazioni.grid(row=0, column=0, sticky="w", padx=16, pady=(16, 8))
+        ctk.CTkLabel(card_right, text="PORTAFOGLIO LIVE", font=self.section_font, text_color=config.COLOR_TEXT_SUBTLE).grid(row=0, column=0, sticky="w", padx=20, pady=(20, 5))
+        
+        stats_frame = ctk.CTkFrame(card_right, fg_color="transparent")
+        stats_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
+        stats_frame.grid_columnconfigure((0,1,2), weight=1)
 
-        label_capitale = ctk.CTkLabel(
-            card_left, text="Capitale iniziale", font=self.body_font
-        )
-        label_capitale.grid(row=1, column=0, sticky="w", padx=16, pady=(4, 2))
+        self.lbl_cash = ctk.CTkLabel(stats_frame, text="$0.00\nLiquidità", font=self.metric_font, text_color=config.COLOR_SUCCESS)
+        self.lbl_cash.grid(row=0, column=0, sticky="w")
+        self.lbl_pos = ctk.CTkLabel(stats_frame, text="$0.00\nIn Posizione", font=self.metric_font, text_color=config.COLOR_WARNING)
+        self.lbl_pos.grid(row=0, column=1, sticky="w")
+        self.lbl_tot = ctk.CTkLabel(stats_frame, text="$0.00\nEquity Totale", font=self.metric_font, text_color=config.COLOR_CHART_LINE)
+        self.lbl_tot.grid(row=0, column=2, sticky="w")
 
-        self.entry_capitale = ctk.CTkEntry(
-            card_left, placeholder_text="10000", height=36, corner_radius=10
-        )
-        self.entry_capitale.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 10))
+        term_frame = ctk.CTkFrame(card_right, fg_color=config.COLOR_TERM_BG, corner_radius=8)
+        term_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(20, 20))
+        card_right.grid_rowconfigure(2, weight=1)
 
-        label_ticker = ctk.CTkLabel(card_left, text="Ticker", font=self.body_font)
-        label_ticker.grid(row=3, column=0, sticky="w", padx=16, pady=(4, 2))
+        self.terminal = ctk.CTkTextbox(term_frame, fg_color="transparent", text_color=config.COLOR_TERM_TEXT, font=self.term_font)
+        self.terminal.pack(fill="both", expand=True, padx=15, pady=15)
+        self.terminal.configure(state="disabled")
 
-        self.entry_ticker = ctk.CTkEntry(
-            card_left, placeholder_text="SPY", height=36, corner_radius=10
-        )
-        self.entry_ticker.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 10))
-
-        label_start = ctk.CTkLabel(card_left, text="Data Inizio (YYYY-MM-DD)", font=self.body_font)
-        label_start.grid(row=5, column=0, sticky="w", padx=16, pady=(4, 2))
-
-        self.entry_start = ctk.CTkEntry(
-            card_left, placeholder_text="2020-01-01", height=36, corner_radius=10
-        )
-        self.entry_start.grid(row=6, column=0, sticky="ew", padx=16, pady=(0, 10))
-
-        label_end = ctk.CTkLabel(card_left, text="Data Fine (YYYY-MM-DD)", font=self.body_font)
-        label_end.grid(row=7, column=0, sticky="w", padx=16, pady=(4, 2))
-
-        self.entry_end = ctk.CTkEntry(
-            card_left, placeholder_text="2024-01-01", height=36, corner_radius=10
-        )
-        self.entry_end.grid(row=8, column=0, sticky="ew", padx=16, pady=(0, 10))
-
-        label_regole = ctk.CTkLabel(
-            card_left,
-            text=(
-                "Regole:\n"
-                "BUY se prezzo <= -20% ATH\n"
-                "SELL se prezzo >= -2% ATH"
-            ),
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        label_regole.grid(row=9, column=0, sticky="w", padx=16, pady=(0, 12))
-
-        self.bottone_avvio = ctk.CTkButton(
-            card_left,
-            text="Avvia Simulazione",
-            height=40,
-            corner_radius=12,
-            fg_color=config.COLOR_ACCENT,
-            hover_color=config.COLOR_ACCENT_HOVER,
-            command=self._on_start,
-        )
-        self.bottone_avvio.grid(row=10, column=0, sticky="ew", padx=16, pady=(4, 16))
-
-        label_stato_titolo = ctk.CTkLabel(
-            card_right, text="Stato", font=self.section_font
-        )
-        label_stato_titolo.grid(row=0, column=0, sticky="w", padx=16, pady=(16, 6))
-
-        self.label_stato = ctk.CTkLabel(
-            card_right,
-            text="In attesa...",
-            font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
-            text_color="#e2e8f0",
-            justify="left",
-            wraplength=220,
-        )
-        self.label_stato.grid(row=1, column=0, sticky="w", padx=16, pady=(2, 6))
-
-        self.progress_bar = ctk.CTkProgressBar(card_right, height=10, corner_radius=6)
-        self.progress_bar.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 10))
-        self.progress_bar.set(0)
-
-        label_info = ctk.CTkLabel(
-            card_right,
-            text=(
-                "Backtest dal 01/01/2020 a oggi\n"
-                "Tearsheet aperto in browser"
-            ),
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        label_info.grid(row=3, column=0, sticky="w", padx=16, pady=(0, 10))
-
-        label_market_title = ctk.CTkLabel(
-            card_right, text="Snapshot Mercato", font=self.section_font
-        )
-        label_market_title.grid(row=4, column=0, sticky="w", padx=16, pady=(6, 6))
-
-        self.label_market_price = ctk.CTkLabel(
-            card_right,
-            text="Prezzo: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-        )
-        self.label_market_price.grid(row=5, column=0, sticky="w", padx=16, pady=(0, 2))
-
-        self.label_market_return = ctk.CTkLabel(
-            card_right,
-            text="Rendimento 1Y: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-        )
-        self.label_market_return.grid(row=6, column=0, sticky="w", padx=16, pady=(0, 2))
-
-        self.label_market_vol = ctk.CTkLabel(
-            card_right,
-            text="Volatilita 1Y: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-        )
-        self.label_market_vol.grid(row=7, column=0, sticky="w", padx=16, pady=(0, 2))
-
-        self.label_market_update = ctk.CTkLabel(
-            card_right,
-            text="Aggiornato: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-        )
-        self.label_market_update.grid(row=8, column=0, sticky="w", padx=16, pady=(0, 16))
-
-        card_bottom = ctk.CTkFrame(
-            body,
-            fg_color=config.COLOR_CARD,
-            corner_radius=16,
-            border_width=1,
-            border_color=config.COLOR_BORDER,
-        )
-        card_bottom.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=0, pady=(6, 0))
-        card_bottom.grid_columnconfigure(0, weight=1)
-        card_bottom.grid_columnconfigure(1, weight=1)
-
-        label_details_title = ctk.CTkLabel(
-            card_bottom, text="Dettagli Simulazione", font=self.section_font
-        )
-        label_details_title.grid(row=0, column=0, columnspan=2, sticky="w", padx=16, pady=(14, 6))
-
-        self.label_details_left = ctk.CTkLabel(
-            card_bottom,
-            text="Ticker: -\nCapitale: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        self.label_details_left.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 14))
-
-        self.label_details_right = ctk.CTkLabel(
-            card_bottom,
-            text="Periodo: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        self.label_details_right.grid(row=1, column=1, sticky="w", padx=16, pady=(0, 14))
-
-        label_results_title = ctk.CTkLabel(
-            card_bottom, text="Risultati benchmark", font=self.section_font
-        )
-        label_results_title.grid(row=2, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 6))
-
-        self.label_metrics_left = ctk.CTkLabel(
-            card_bottom,
-            text="Rendimento totale: -\nCAGR: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        self.label_metrics_left.grid(row=3, column=0, sticky="w", padx=16, pady=(0, 10))
-
-        self.label_metrics_right = ctk.CTkLabel(
-            card_bottom,
-            text="Max Drawdown: -\nVolatilita: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        self.label_metrics_right.grid(row=3, column=1, sticky="w", padx=16, pady=(0, 10))
-
-        label_strategy_title = ctk.CTkLabel(
-            card_bottom, text="Risultati strategia", font=self.section_font
-        )
-        label_strategy_title.grid(row=4, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 6))
-
-        self.label_strategy_left = ctk.CTkLabel(
-            card_bottom,
-            text="Rendimento totale: -\nCAGR: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        self.label_strategy_left.grid(row=5, column=0, sticky="w", padx=16, pady=(0, 10))
-
-        self.label_strategy_right = ctk.CTkLabel(
-            card_bottom,
-            text="Max Drawdown: -\nSharpe: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        self.label_strategy_right.grid(row=5, column=1, sticky="w", padx=16, pady=(0, 10))
-
-        label_chart_title = ctk.CTkLabel(
-            card_bottom, text="Equity curve (benchmark)", font=self.section_font
-        )
-        label_chart_title.grid(row=6, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 6))
-
-        self.chart_canvas = tk.Canvas(
-            card_bottom,
-            height=110,
-            bg=config.COLOR_HEADER,
-            highlightthickness=0,
-        )
-        self.chart_canvas.grid(row=7, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 12))
-        self.chart_canvas.bind("<Configure>", lambda event: self._redraw_chart())
-
-        self.label_report = ctk.CTkLabel(
-            card_bottom,
-            text="Report: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-        )
-        self.label_report.grid(row=8, column=0, sticky="w", padx=16, pady=(0, 14))
-
-        self.button_report = ctk.CTkButton(
-            card_bottom,
-            text="Apri report",
-            height=34,
-            corner_radius=10,
-            fg_color=config.COLOR_ACCENT,
-            hover_color=config.COLOR_ACCENT_HOVER,
-            command=self._open_report,
-            state="disabled",
-        )
-        self.button_report.grid(row=8, column=1, sticky="e", padx=16, pady=(0, 14))
-
-        self.label_metrics_files = ctk.CTkLabel(
-            card_bottom,
-            text="Metriche salvate: -",
-            font=self.body_font,
-            text_color=config.COLOR_TEXT_SUBTLE,
-            justify="left",
-            wraplength=480,
-        )
-        self.label_metrics_files.grid(row=9, column=0, columnspan=2, sticky="w", padx=16, pady=(0, 14))
-
-        footer = ctk.CTkLabel(
-            root,
-            text="Lumibot + Yahoo Finance",
-            font=ctk.CTkFont(family="Segoe UI", size=11),
-            text_color=config.COLOR_TEXT_MUTED,
-        )
-        footer.grid(row=2, column=0, pady=(0, 12))
-
-    def _set_status(self, text):
-        # Aggiornamento thread-safe della label di stato
+    def _log_to_terminal(self, text):
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         def _update():
-            color = config.COLOR_TEXT_MUTED
-            if text.lower().startswith("errore"):
-                color = config.COLOR_ERROR
-            elif text.lower().startswith("completato"):
-                color = config.COLOR_SUCCESS
-            self.label_stato.configure(text=text, text_color=color)
-
+            self.terminal.configure(state="normal")
+            self.terminal.insert("end", f"[{timestamp}] {text}\n")
+            self.terminal.see("end")
+            self.terminal.configure(state="disabled")
         self.app.after(0, _update)
 
-    @staticmethod
-    def _format_currency(value):
-        if isinstance(value, (int, float)):
-            return f"{value:,.2f}"
-        return "-"
-
-    @staticmethod
-    def _format_number(value):
-        if isinstance(value, (int, float)):
-            return f"{value:,.2f}"
-        return "-"
-
-    @staticmethod
-    def _format_percent(value):
-        if isinstance(value, (int, float)):
-            return f"{value:.2%}"
-        return "-"
-
-    @staticmethod
-    def _format_date(value):
-        if value is None:
-            return "-"
-        return str(value)
-
-    def _set_market_snapshot(self, snapshot):
+    def _update_portfolio(self, cash, val_posizioni):
         def _update():
-            price = snapshot.get("last_close")
-            one_year = snapshot.get("one_year_return")
-            vol = snapshot.get("volatility")
-            update = snapshot.get("last_update")
-
-            self.label_market_price.configure(
-                text=f"Prezzo: {self._format_currency(price)}"
-            )
-            self.label_market_return.configure(
-                text=f"Rendimento 1Y: {self._format_percent(one_year)}"
-            )
-            self.label_market_vol.configure(
-                text=f"Volatilita 1Y: {self._format_percent(vol)}"
-            )
-            self.label_market_update.configure(
-                text=f"Aggiornato: {self._format_date(update)}"
-            )
-
+            self.lbl_cash.configure(text=f"${cash:,.2f}\nLiquidità")
+            self.lbl_pos.configure(text=f"${val_posizioni:,.2f}\nIn Posizione")
+            self.lbl_tot.configure(text=f"${(cash + val_posizioni):,.2f}\nEquity Totale")
         self.app.after(0, _update)
 
-    def _set_details(self, details):
-        def _update():
-            ticker = details.get("ticker", "-")
-            capital = details.get("capital", "-")
-            start = details.get("start", "-")
-            end = details.get("end", "-")
-            self.label_details_left.configure(
-                text=f"Ticker: {ticker}\nCapitale: {self._format_currency(capital)}"
-            )
-            self.label_details_right.configure(
-                text=f"Periodo: {self._format_date(start)} -> {self._format_date(end)}"
-            )
+    def _get_callbacks(self):
+        return {"log": self._log_to_terminal, "portfolio": self._update_portfolio, "running": self._set_running_ui}
 
-        self.app.after(0, _update)
-
-    def _set_metrics(self, metrics):
-        def _update():
-            total_return = self._format_percent(metrics.get("total_return"))
-            cagr = self._format_percent(metrics.get("cagr"))
-            max_dd = self._format_percent(metrics.get("max_drawdown"))
-            vol = self._format_percent(metrics.get("volatility"))
-            self.label_metrics_left.configure(
-                text=f"Rendimento totale: {total_return}\nCAGR: {cagr}"
-            )
-            self.label_metrics_right.configure(
-                text=f"Max Drawdown: {max_dd}\nVolatilita: {vol}"
-            )
-
-        self.app.after(0, _update)
-
-    def _set_strategy_metrics(self, metrics):
-        def _update():
-            total_return = self._format_percent(metrics.get("total_return"))
-            cagr = self._format_percent(metrics.get("cagr"))
-            max_dd = self._format_percent(metrics.get("max_drawdown"))
-            sharpe = self._format_number(metrics.get("sharpe"))
-            self.label_strategy_left.configure(
-                text=f"Rendimento totale: {total_return}\nCAGR: {cagr}"
-            )
-            self.label_strategy_right.configure(
-                text=f"Max Drawdown: {max_dd}\nSharpe: {sharpe}"
-            )
-
-        self.app.after(0, _update)
-
-    def _set_chart_data(self, values):
-        def _update():
-            self.chart_data = values
-            self._redraw_chart()
-
-        self.app.after(0, _update)
-
-    def _redraw_chart(self):
-        if not hasattr(self, "chart_canvas"):
-            return
-        canvas = self.chart_canvas
-        canvas.delete("all")
-        if not getattr(self, "chart_data", None):
-            return
-
-        width = canvas.winfo_width()
-        height = canvas.winfo_height()
-        if width <= 2 or height <= 2:
-            return
-
-        values = self.chart_data
-        min_val = min(values)
-        max_val = max(values)
-        if max_val == min_val:
-            return
-
-        padding = 6
-        x_step = (width - padding * 2) / max(len(values) - 1, 1)
-        points = []
-        for idx, value in enumerate(values):
-            x = padding + idx * x_step
-            y = height - padding - ((value - min_val) / (max_val - min_val)) * (height - padding * 2)
-            points.extend([x, y])
-
-        canvas.create_line(points, fill=config.COLOR_CHART_LINE, width=2, smooth=True)
-
-    def _set_report_path(self, path):
-        def _update():
-            self.report_path = path
-            self.label_report.configure(text=f"Report: {path}")
-            self.button_report.configure(state="normal")
-
-        self.app.after(0, _update)
-
-    def _set_metrics_files(self, files):
-        def _update():
-            json_path = files.get("json", "-")
-            csv_path = files.get("csv", "-")
-            self.label_metrics_files.configure(
-                text=f"Metriche salvate: JSON {json_path} | CSV {csv_path}"
-            )
-
-        self.app.after(0, _update)
-
-    def _open_report(self):
-        if not getattr(self, "report_path", None):
-            return
-        abs_path = os.path.abspath(self.report_path)
-        webbrowser.open(f"file:///{abs_path}")
-
-    def _reset_results(self):
-        self.report_path = None
-        self.label_metrics_left.configure(text="Rendimento totale: -\nCAGR: -")
-        self.label_metrics_right.configure(text="Max Drawdown: -\nVolatilita: -")
-        self.label_strategy_left.configure(text="Rendimento totale: -\nCAGR: -")
-        self.label_strategy_right.configure(text="Max Drawdown: -\nSharpe: -")
-        self.label_report.configure(text="Report: -")
-        self.label_metrics_files.configure(text="Metriche salvate: -")
-        self.button_report.configure(state="disabled")
-        self.chart_data = None
-        self._redraw_chart()
-
-    def _set_running(self, running):
-        def _update():
-            if running:
-                self.bottone_avvio.configure(
-                    text="Simulazione in corso...", state="disabled"
-                )
-            else:
-                self.bottone_avvio.configure(text="Avvia Simulazione", state="normal")
-
-        self.app.after(0, _update)
-
-    def _progress_start(self):
-        self.app.after(0, self.progress_bar.start)
-
-    def _progress_stop(self):
-        self.app.after(0, self.progress_bar.stop)
-
-    def _on_start(self):
-        # Validazione input capitale
-        try:
-            capitale = float(self.entry_capitale.get().strip())
-            if capitale <= 0:
-                raise ValueError
-        except ValueError:
-            self.label_stato.configure(text="Capitale non valido.")
-            return
-
-        # Ottieni ticker (se vuoto usa placeholder)
-        ticker = self.entry_ticker.get().strip() or "SPY"
-
-        # Ottieni strategia selezionata
-        nome_strategia = self.option_strategy.get()
-
-        # Validazione e parsing date
-        import datetime
-        try:
-            start_str = self.entry_start.get().strip() or "2020-01-01"
-            end_str = self.entry_end.get().strip() or str(datetime.date.today())
-            
-            # Converte stringhe in datetime.datetime
-            start = datetime.datetime.strptime(start_str, "%Y-%m-%d")
-            end = datetime.datetime.strptime(end_str, "%Y-%m-%d")
-            
-            if start >= end:
-                raise ValueError("Data inizio deve essere prima della data fine")
-        except ValueError as exc:
-            self.label_stato.configure(text=f"Date non valide: {exc}")
-            return
-
-        self._reset_results()
-
-        callbacks = {
-            "status": self._set_status,
-            "progress_start": self._progress_start,
-            "progress_stop": self._progress_stop,
-            "market": self._set_market_snapshot,
-            "details": self._set_details,
-            "running": self._set_running,
-            "metrics": self._set_metrics,
-            "strategy_metrics": self._set_strategy_metrics,
-            "chart": self._set_chart_data,
-            "report": self._set_report_path,
-            "metrics_files": self._set_metrics_files,
+    def _get_params(self):
+        return {
+            "ticker": self.combo_ticker.get().strip() or "EURUSD", 
+            "strategia": self.option_strategy.get(),
+            "budget": self.entry_capitale.get().strip() or "100"
         }
 
-        # Avvio del backtest in un thread separato con strategia selezionata
-        thread = threading.Thread(
-            target=esegui_backtest, args=(ticker, capitale, start, end, nome_strategia, callbacks), daemon=True
-        )
-        thread.start()
+    def _change_mode(self, value):
+        self.terminal.configure(state="normal")
+        self.terminal.delete("1.0", "end")
+        self.terminal.configure(state="disabled")
+        
+        if value == "SIMULAZIONE":
+            spegni_tutto()
+            self._log_to_terminal("Modalità Backtest. MT5 Disconnesso.")
+            self.seg_mode.configure(selected_color=config.COLOR_ACCENT)
+            self.frame_date.grid()
+            self.bottone_avvio.configure(text="▶ AVVIA BACKTEST", fg_color=config.COLOR_ACCENT)
+        else:
+            self._log_to_terminal("Connessione ai Sensori Live in corso...")
+            self.frame_date.grid_remove()
+            # FIX: Soldi reali ora è Viola/Blu scuro, non rosso errore!
+            color = config.COLOR_WARNING if value == "LIVE DEMO" else "#6366f1" 
+            self.seg_mode.configure(selected_color=color)
+            self.bottone_avvio.configure(text="▶ AVVIA TRADING", fg_color=color)
+            gestisci_connessione(value, self._get_callbacks(), self._get_params())
+
+    def _set_running_ui(self, is_trading):
+        def _update():
+            mode = self.seg_mode.get()
+            if mode == "SIMULAZIONE": return
+            if is_trading:
+                self.bottone_avvio.configure(text="⏸ PAUSA BOT", fg_color=config.COLOR_ERROR)
+            else:
+                color = config.COLOR_WARNING if mode == "LIVE DEMO" else "#6366f1"
+                self.bottone_avvio.configure(text="▶ AVVIA TRADING", fg_color=color)
+        self.app.after(0, _update)
+
+    def _on_start_btn(self):
+        mode = self.seg_mode.get()
+        text = self.bottone_avvio.cget("text")
+
+        if mode == "SIMULAZIONE":
+            self._log_to_terminal("Avvio Backtest...")
+        else:
+            if "AVVIA" in text:
+                self._log_to_terminal("Armamento Motore: TRADING ATTIVATO.")
+                from app.mt5_engine import aggiorna_parametri_e_avvia
+                aggiorna_parametri_e_avvia(self._get_params())
+            else:
+                self._log_to_terminal("Disarmo Motore: TRADING IN PAUSA.")
+                from app.mt5_engine import ferma_trading
+                ferma_trading()
+    
+    def _cerca_ticker_ui(self):
+        query = self.combo_ticker.get().strip()
+        if len(query) < 2:
+            self._log_to_terminal("⚠️ Scrivi almeno 2 lettere.")
+            return
+        self._log_to_terminal(f"🔍 Ricerca '{query}'...")
+        self.btn_cerca.configure(state="disabled")
+        
+        def esegui_ricerca():
+            from app.mt5_engine import cerca_simboli_broker
+            risultati = cerca_simboli_broker(query)
+            def aggiorna_ui():
+                self.btn_cerca.configure(state="normal")
+                if risultati:
+                    self.combo_ticker.configure(values=risultati)
+                    self.combo_ticker.set(risultati[0])
+                    self._log_to_terminal(f"✅ Trovati {len(risultati)} asset.")
+                else:
+                    self._log_to_terminal("❌ Nessun risultato.")
+            self.app.after(0, aggiorna_ui)
+        threading.Thread(target=esegui_ricerca, daemon=True).start()
 
     def run(self):
         self.app.mainloop()

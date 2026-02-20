@@ -43,7 +43,7 @@ def esegui_backtest(ticker, capitale, start, end, nome_strategia, callbacks):
     StrategyClass = STRATEGIES[nome_strategia]
 
     _safe_call(callbacks, "running", True)
-    details = {"ticker": ticker, "capital": capitale, "start": start.date(), "end": end.date()}
+    details = {"ticker": ticker, "capital": capitale, "start": str(start.date()), "end": str(end.date())}
     _safe_call(callbacks, "details", details)
     _safe_call(callbacks, "status", "Simulazione in corso...")
     _safe_call(callbacks, "progress_start")
