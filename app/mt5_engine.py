@@ -254,12 +254,12 @@ def _loop_principale(mode, callbacks, param_iniziali):
     imposta_ui = callbacks.get("running") 
     
     if not mt5.initialize():
-        custom_log("❌ ERRORE CRITICO: MetaTrader 5 chiuso.")
+        custom_log("❌ CRITICAL ERROR: MetaTrader 5 closed.")
         stato_motore = "SPENTO"
         return
         
     acc = mt5.account_info()
-    if acc: custom_log(f"📡 Radar V10.1 (Scansione Massiva) connesso su {acc.server}")
+    if acc: custom_log(f"📡 Radar V10.1 (Massive Scan) connected to {acc.server}")
 
     memoria_asset = {} 
     profitto_giornaliero = 0.0 
@@ -283,7 +283,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
             if session_start_time is None: 
                 session_start_time = time.time()
                 primo_giro_completato = False
-                custom_log("🚀 FASE 1: Costruzione Portafoglio. Analisi AI su tutti gli asset...")
+                custom_log("🚀 PHASE 1: Portfolio Construction. AI analysis on all assets...")
             
             stringa_tickers = parametri_attivi.get("ticker", "EURUSD")
             budget_totale_max = float(parametri_attivi.get("budget", 100))
@@ -293,16 +293,16 @@ def _loop_principale(mode, callbacks, param_iniziali):
             tickers_da_scansionare = [t.strip() for t in stringa_tickers.split(",") if t.strip()]
             venerdi_sera = is_venerdi_chiusura()
 
-            # 🔄 AZZERAMENTO DI MEZZANOTTE
+            # 🔄 MIDNIGHT RESET
             oggi = datetime.datetime.now().day
             if oggi != giorno_corrente:
                 profitto_giornaliero = 0.0
                 giorno_corrente = oggi
-                custom_log("🌒 Nuovo Giorno: Contatore profitti e drawdown azzerato. Si riparte!")
+                custom_log("🌒 New Day: Profit and drawdown counter reset. Starting fresh!")
 
-            # 🛑 KILL SWITCH (Solo per le perdite! I profitti corrono liberi)
+            # 🛑 KILL SWITCH (Only for losses! Profits run free)
             if profitto_giornaliero <= -max_loss:
-                msg = f"🛑 MAX DRAWDOWN RAGGIUNTO ({profitto_giornaliero:.2f}$). Chiudo speculazioni, salvo Cassetto."
+                msg = f"🛑 MAX DRAWDOWN REACHED ({profitto_giornaliero:.2f}$). Closing speculations, securing long-term positions."
                 custom_log(msg)
                 invia_telegram(tg_chat, msg)
                 stato_motore = "CHIUSURA_FORZATA"
@@ -329,7 +329,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
                 categoria, orizzonte = classifica_asset(ticker)
                 
                 # ==========================================
-                # 1. RICERCA INGRESSO
+                # 1. ENTRY SEARCH
                 # ==========================================
                 if not posizioni:
                     if venerdi_sera and orizzonte == "SHORT_TERM": continue 
@@ -347,23 +347,23 @@ def _loop_principale(mode, callbacks, param_iniziali):
                     trigger_tecnico = (dist_dal_max <= -0.01 or dist_dal_min >= 0.01)
                     trigger_massivo = not primo_giro_completato
 
-                    # Se c'è movimento tecnico OPPURE siamo in Fase 1 (Costruzione Portafoglio)
+                    # If there is technical movement OR we are in Phase 1 (Portfolio Construction)
                     if trigger_tecnico or trigger_massivo:
                         if trigger_massivo:
-                            print(f"[VS CODE LOG] 🚀 ANALISI MASSIVA: Controllo {ticker} per costruzione portafoglio...")
+                            print(f"[VS CODE LOG] 🚀 MASSIVE ANALYSIS: Checking {ticker} for portfolio construction...")
                         else:
-                            print(f"[VS CODE LOG] Movimento su {ticker}. Interrogo l'AI...")
+                            print(f"[VS CODE LOG] Movement on {ticker}. Querying AI...")
                             
                         budget_usato_tot = sum(d["impegnato"] for d in memoria_asset.values())
                         budget_base = budget_totale_max / max(1, len(tickers_da_scansionare))
                         budget_da_usare = min(budget_base * 1.5, budget_totale_max - budget_usato_tot)
 
                         if budget_da_usare >= 1.0:
-                            # V11: Estrazione di Sentiment, Score e Messaggio
+                            # V11: Extract Sentiment, Score, and Message
                             sentiment, ai_score, msg_ai = analizza_sentiment_ollama(ticker)
                             
                             azione = None
-                            # 🛡️ SOGLIA DI INGRESSO: 5 su 10. Scarta il rumore di mercato debole.
+                            # 🛡️ ENTRY THRESHOLD: 5 out of 10. Filters out weak market noise.
                             soglia_ingresso = 5 
                             
                             if sentiment == "POSITIVO" and ai_score >= soglia_ingresso: 
@@ -371,7 +371,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
                             elif sentiment == "NEGATIVO" and ai_score <= -soglia_ingresso: 
                                 azione = "SELL" 
                             elif trigger_massivo:
-                                # Se siamo in kickstart ma l'AI dà un punteggio debole (es. 2 o -3), stiamo fermi
+                                # If we are in kickstart but AI gives a weak score (e.g., 2 or -3), stay idle
                                 pass
                             
                             if azione:
@@ -383,13 +383,13 @@ def _loop_principale(mode, callbacks, param_iniziali):
                                     invia_telegram(tg_chat, f"{'🟢' if azione=='BUY' else '🔴'} NUOVO {azione} {icona}: {ticker}\nPrezzo: {p_eseguito}\nAI: {msg_ai}")
                                     memoria_asset[ticker]["impegnato"] = budget_da_usare
                                     memoria_asset[ticker]["picco_trade"] = p_eseguito
-                                    time.sleep(1.0) # Ritardo anti-spam broker per acquisti multipli
+                                    time.sleep(1.0) # Anti-spam delay for multiple purchases
                                     
                         memoria_asset[ticker]["high"] = prezzo
                         memoria_asset[ticker]["low"] = prezzo
                             
                 # ==========================================
-                # 2. GESTIONE E IMMUNITÀ
+                # 2. POSITION MANAGEMENT & IMMUNITY
                 # ==========================================
                 else:
                     is_long = posizioni[0].type == mt5.POSITION_TYPE_BUY
@@ -448,31 +448,31 @@ def _loop_principale(mode, callbacks, param_iniziali):
                         memoria_asset[ticker]["high"] = prezzo
                         memoria_asset[ticker]["low"] = prezzo
                         
-                         # --- SISTEMA DI QUARANTENA E COOL-DOWN ---
+                         # --- QUARANTINE SYSTEM & COOL-DOWN ---
                         if profitto_netto < 0 and not is_immune:
                             memoria_asset[ticker]["perdite"] += 1
                             if memoria_asset[ticker]["perdite"] >= 2:
-                                memoria_asset[ticker]["quarantena"] = time.time() + 3600 # 1 ora per troppi Stop Loss
+                                memoria_asset[ticker]["quarantena"] = time.time() + 3600 # 1 hour for too many stops
                                 memoria_asset[ticker]["perdite"] = 0
                         elif profitto_netto > 0:
                             memoria_asset[ticker]["perdite"] = 0
                             
-                            # 🏆 QUARANTENA DI VITTORIA (Cool-down anti ping-pong)
-                            ore_pausa = 2 # Aspetta 2 ore prima di rimettere mano a questo asset
+                            # 🏆 VICTORY QUARANTINE (Anti ping-pong cool-down)
+                            ore_pausa = 2 # Wait 2 hours before retrading this asset
                             memoria_asset[ticker]["quarantena"] = time.time() + (3600 * ore_pausa)
-                            custom_log(f"⏳ COOL-DOWN | {ticker} in pausa per {ore_pausa}h dopo il Take Profit.")
+                            custom_log(f"⏳ COOL-DOWN | {ticker} paused for {ore_pausa}h after Take Profit.")
                         else: 
                             memoria_asset[ticker]["perdite"] = 0
 
-            # Termine del ciclo di scansione su tutti i ticker
+            # End of scan cycle for all tickers
             if not primo_giro_completato:
                 primo_giro_completato = True
-                custom_log("✅ FASE 1 Completata. Portafoglio Costruito. Passo al Radar standard.")
+                custom_log("✅ PHASE 1 Complete. Portfolio Built. Moving to standard Radar.")
 
             if time.time() - ultimo_heartbeat > 30:
                 radar_ticks += 1
                 budget_attivo = sum(d["impegnato"] for d in memoria_asset.values())
-                custom_log(f"👀 Radar attivo: {len(tickers_da_scansionare)} asset | Profitto oggi: {profitto_giornaliero:.2f}$ | Piatto: {budget_attivo:.2f}$/{budget_totale_max:.2f}$ (Update {radar_ticks}x)", replace=(radar_ticks > 1))
+                custom_log(f"👀 Radar active: {len(tickers_da_scansionare)} assets | Today's profit: {profitto_giornaliero:.2f}$ | Deployment: {budget_attivo:.2f}$/{budget_totale_max:.2f}$ (Update {radar_ticks}x)", replace=(radar_ticks > 1))
                 
                 tutte_le_posizioni = mt5.positions_get()
                 if tutte_le_posizioni: aggiorna_csv_portafoglio_aperto(tutte_le_posizioni)

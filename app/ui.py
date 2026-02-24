@@ -111,7 +111,7 @@ class TradingApp:
         self.combo_ticker.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 15))
         self.combo_ticker.set(opzioni_menu[0])
 
-        # 3. Telegram (SOLO CHAT ID ORA)
+        # 3. Telegram (ONLY CHAT ID NOW)
         card_tg = ctk.CTkFrame(left_panel, fg_color=C_CARD, corner_radius=8, border_width=1, border_color=C_BORDER)
         card_tg.grid(row=2, column=0, sticky="ew", pady=(0, 15))
         card_tg.grid_columnconfigure(0, weight=1)
@@ -196,11 +196,11 @@ class TradingApp:
             "ticker": tickers_reali or "EURUSD", 
             "budget": self.entry_capitale.get().strip() or "100",
             "loss": self.entry_loss.get().strip() or "30",
-            "tg_chat": self.entry_tg_chat.get().strip() # Ora prende SOLO la chat ID
+            "tg_chat": self.entry_tg_chat.get().strip() # Now accepts ONLY chat ID
         }
 
     def _change_mode(self, value):
-        self._log_to_terminal(f"Modalità cambiata in: {value}")
+        self._log_to_terminal(f"Mode changed to: {value}")
         if value != "[ Backtest ]":
             gestisci_connessione("LIVE", self._get_callbacks(), self._get_params())
         else:

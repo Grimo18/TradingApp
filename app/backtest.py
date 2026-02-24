@@ -115,8 +115,8 @@ def esegui_backtest(ticker, capitale, start, end, nome_strategia, callbacks):
         # Lumibot richiede datetime.datetime per backtesting_start e backtesting_end
         result = StrategyClass.backtest(
             YahooDataBacktesting,
-            start,  # ora è datetime.datetime
-            end,    # ora è datetime.datetime
+            start,  # now is datetime.datetime
+            end,    # now is datetime.datetime
             parameters={"symbol": ticker},
             show_tearsheet=True,
             initial_cash=capitale,
@@ -131,10 +131,10 @@ def esegui_backtest(ticker, capitale, start, end, nome_strategia, callbacks):
 
             metrics_files = save_metrics(details, metrics or {}, strategy_metrics)
             _safe_call(callbacks, "metrics_files", metrics_files)
-        _safe_call(callbacks, "status", "Completato!")
+        _safe_call(callbacks, "status", "Completed!")
     except Exception as exc:
-        logger.exception("Errore nel backtest")
-        _safe_call(callbacks, "status", f"Errore: {exc}")
+        logger.exception("Error during backtest")
+        _safe_call(callbacks, "status", f"Error: {exc}")
     finally:
         _safe_call(callbacks, "progress_stop")
         _safe_call(callbacks, "running", False)
