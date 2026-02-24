@@ -327,24 +327,24 @@ def _loop_principale(mode, callbacks, param_iniziali):
         if stato_motore == "TRADING":
             if ultimo_stato_ui != True: imposta_ui(True); ultimo_stato_ui = True
             
-            # Reset delle variabili all'avvio del bottone START
+            # Reset variables on START button press
             if session_start_time is None:
                 session_start_time = time.time()
                 primo_giro_completato = False
-                autopilot_tickers = [] # 🧠 Memoria dinamica dell'Autopilot
+                autopilot_tickers = [] # 🧠 Dynamic Autopilot memory
                 
                 # ==========================================
                 # 🩺 SYSTEM HEALTH CHECK (Pre-Flight Test)
                 # ==========================================
-                custom_log("🔄 Esecuzione System Health Check pre-avvio...")
+                custom_log("🔄 Executing System Health Check pre-startup...")
                 health_passed = True
                 
-                # 1. Test Connessione Internet
+                # 1. Test Internet Connection
                 try:
                     requests.get("https://8.8.8.8", timeout=3)
-                    custom_log("   ✅ Connessione Internet: OK")
+                    custom_log("   ✅ Internet Connection: OK")
                 except:
-                    custom_log("   ❌ Connessione Internet: ASSENTE")
+                    custom_log("   ❌ Internet Connection: UNAVAILABLE")
                     health_passed = False
 
                 # 2 & 3. Test MetaTrader 5 Terminal and Auto-Trading

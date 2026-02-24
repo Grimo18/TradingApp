@@ -1,6 +1,8 @@
 import streamlit as st
 import MetaTrader5 as mt5
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 
 # Page Configuration (Institutional Dark Mode)
 st.set_page_config(page_title="QUANT AI TERMINAL", page_icon="🏦", layout="wide")
@@ -30,7 +32,6 @@ else:
     st.warning("⚠️ No account connected to MT5.")
 
 st.divider()
-st.subheader("📊 Open Positions")
 
 # Fetch all active trades
 posizioni = mt5.positions_get()
@@ -41,18 +42,71 @@ else:
     # Transform raw MT5 data into a clean visual table
     df = pd.DataFrame(list(posizioni), columns=posizioni[0]._asdict().keys())
     
+    # --- CHARTS SECTION ---
+    st.subheader("📈 Portfolio Analytics")
+    
+    chart_col1, chart_col2 = st.columns(2)
+    
+    with chart_col1:
+        # CHART 1: Risk Allocation (Pie Chart based on Volume)
+        fig_pie = px.pie(
+            df, 
+            values='volume', 
+            names='symbol', 
+            title="Portfolio Exposure (by Volume)",
+            hole=0.4, # Makes it a donut chart
+            color_discrete_sequence=px.colors.sequential.Tealgrn
+        )
+        fig_pie.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color="white")
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+    with chart_col2:
+        # CHART 2: Live Candlestick Chart of the Top Asset
+        top_symbol = df.iloc[0]['symbol'] # Gets the first open symbol
+        
+        # Fetch last 50 D1 candles for this symbol
+        rates = mt5.copy_rates_from_pos(top_symbol, mt5.TIMEFRAME_D1, 0, 50)
+        if rates is not None and len(rates) > 0:
+            df_rates = pd.DataFrame(rates)
+            df_rates['time'] = pd.to_datetime(df_rates['time'], unit='s')
+            
+            fig_candle = go.Figure(data=[go.Candlestick(
+                x=df_rates['time'],
+                open=df_rates['open'],
+                high=df_rates['high'],
+                low=df_rates['low'],
+                close=df_rates['close'],
+                name=top_symbol
+            )])
+            fig_candle.update_layout(
+                title=f"Live Market: {top_symbol} (Daily)",
+                xaxis_rangeslider_visible=False,
+                plot_bgcolor='rgba(0,0,0,0)', 
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color="white"
+            )
+            st.plotly_chart(fig_candle, use_container_width=True)
+        else:
+            st.warning(f"Could not load chart data for {top_symbol}")
+
+    st.divider()
+    # --- END CHARTS SECTION ---
+
+    st.subheader("📋 Open Positions Details")
+    
     # Select only relevant columns for the dashboard
-    df = df[['ticket', 'symbol', 'type', 'volume', 'price_open', 'price_current', 'profit', 'comment']]
+    df_table = df[['ticket', 'symbol', 'type', 'volume', 'price_open', 'price_current', 'profit', 'comment']].copy()
     
     # Map order types: 0 becomes BUY, 1 becomes SELL
-    df['type'] = df['type'].map({0: 'BUY 🟢', 1: 'SELL 🔴'})
+    df_table['type'] = df_table['type'].map({0: 'BUY 🟢', 1: 'SELL 🔴'})
     
     # Format profit as currency
-    df['profit'] = df['profit'].apply(lambda x: f"${x:.2f}")
+    df_table['profit'] = df_table['profit'].apply(lambda x: f"${x:.2f}")
     
     # Display full-width dataframe
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df_table, use_container_width=True, hide_index=True)
 
 # Button to refresh dashboard data manually
-if st.button("🔄 Refresh Data"):
+st.write("") # Spacer
+if st.button("🔄 Refresh Data", type="primary"):
     st.rerun()
