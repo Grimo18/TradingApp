@@ -279,12 +279,67 @@ def _loop_principale(mode, callbacks, param_iniziali):
         if stato_motore == "TRADING":
             if ultimo_stato_ui != True: imposta_ui(True); ultimo_stato_ui = True
             
-            # Reset of variables on START button press
+            # Reset delle variabili all'avvio del bottone START
             if session_start_time is None:
                 session_start_time = time.time()
                 primo_giro_completato = False
-                autopilot_tickers = [] # 🧠 Dynamic memory of Autopilot
-                custom_log("🚀 PHASE 1: Portfolio Construction. AI analysis on all assets...")
+                autopilot_tickers = [] # 🧠 Memoria dinamica dell'Autopilot
+                
+                # ==========================================
+                # 🩺 SYSTEM HEALTH CHECK (Pre-Flight Test)
+                # ==========================================
+                custom_log("🔄 Esecuzione System Health Check pre-avvio...")
+                health_passed = True
+                
+                # 1. Test Connessione Internet
+                try:
+                    requests.get("https://8.8.8.8", timeout=3)
+                    custom_log("   ✅ Connessione Internet: OK")
+                except:
+                    custom_log("   ❌ Connessione Internet: ASSENTE")
+                    health_passed = False
+
+                # 2 & 3. Test MetaTrader 5 Terminal and Auto-Trading
+                term_info = mt5.terminal_info()
+                if term_info is not None:
+                    custom_log("   ✅ MetaTrader 5 Terminal: OPEN")
+                    if term_info.trade_allowed:
+                        custom_log("   ✅ MT5 Algo Trading: ENABLED")
+                    else:
+                        custom_log("   ❌ MT5 Algo Trading: DISABLED (Press 'Auto Trading' in MT5!)")
+                        health_passed = False
+                else:
+                    custom_log("   ❌ MetaTrader 5 Terminal: CLOSED/DISCONNECTED")
+                    health_passed = False
+
+                # 4. Test Account Broker
+                if mt5.account_info() is not None:
+                    custom_log("   ✅ Account Broker: CONNECTED")
+                else:
+                    custom_log("   ❌ Account Broker: DISCONNECTED (Log in to MT5!)")
+                    health_passed = False
+
+                # 5. Test API Groq
+                if not os.getenv("GROQ_API_KEY"):
+                    custom_log("   ❌ Groq API Key: MISSING IN .env FILE")
+                    health_passed = False
+                else:
+                    custom_log("   ✅ Groq API Key: CONFIGURED")
+                    
+                # 6. Test API News
+                if not os.getenv("NEWS_API_KEY"):
+                    custom_log("   ❌ News API Key: MISSING IN .env FILE")
+                    health_passed = False
+                else:
+                    custom_log("   ✅ News API Key: CONFIGURED")
+
+                if not health_passed:
+                    custom_log("🛑 HEALTH CHECK FAILED. Fix errors and retry.")
+                    stato_motore = "CHIUSURA_FORZATA"
+                    continue
+                else:
+                    custom_log("🚀 ALL SYSTEMS OPERATIONAL. Starting PHASE 1: Market Scan...")
+                # ==========================================
 
             stringa_tickers = parametri_attivi.get("ticker", "EURUSD")
             budget_totale_max = float(parametri_attivi.get("budget", 100))
