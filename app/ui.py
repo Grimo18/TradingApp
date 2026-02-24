@@ -40,7 +40,7 @@ class TradingApp:
         self.app.configure(fg_color=C_BG)
         
         self.watchlist_map = {
-            "🌍 Mega-Mix Istituzionale (30 Asset)": "EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, AAPL.OQ, MSFT.OQ, NVDA.OQ, TSLA.OQ, AMZN.OQ, META.OQ, GOOGL.OQ, NFLX.OQ, AMD.OQ, INTC.OQ, QCOM.OQ, CSCO.OQ, PEP.OQ, COST.OQ, SBUX.OQ, PYPL.OQ, MU.OQ, TXN.OQ, INTU.OQ, AMAT.OQ, CMCSA.OQ, GILD.OQ, MDLZ.OQ",
+            "🌍 Institutional Mega-Mix (30 Assets)": "EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, AAPL.OQ, MSFT.OQ, NVDA.OQ, TSLA.OQ, AMZN.OQ, META.OQ, GOOGL.OQ, NFLX.OQ, AMD.OQ, INTC.OQ, QCOM.OQ, CSCO.OQ, PEP.OQ, COST.OQ, SBUX.OQ, PYPL.OQ, MU.OQ, TXN.OQ, INTU.OQ, AMAT.OQ, CMCSA.OQ, GILD.OQ, MDLZ.OQ",
             "🦅 Top 5 Big Tech USA": "NVDA.OQ, TSLA.OQ, AAPL.OQ, MSFT.OQ, META.OQ, AMZN.OQ",
             "💱 Top 5 Forex Majors": "EURUSD, GBPUSD, USDJPY, USDCAD, AUDUSD",
             "🪙 Top Crypto Asset": "BTCUSD, ETHUSD"
@@ -118,7 +118,7 @@ class TradingApp:
 
         ctk.CTkLabel(card_tg, text="Telegram Notifications", font=self.card_title_font, text_color=C_TEXT).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
         
-        ctk.CTkLabel(card_tg, text="Chat ID (separati da virgola per multi-user)", font=self.label_font, text_color=C_SUB).grid(row=1, column=0, sticky="w", padx=15)
+        ctk.CTkLabel(card_tg, text="Chat IDs (comma-separated for multi-user)", font=self.label_font, text_color=C_SUB).grid(row=1, column=0, sticky="w", padx=15)
         self.entry_tg_chat = ctk.CTkEntry(card_tg, fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT, height=35, placeholder_text="es. 1234567, 9876543")
         self.entry_tg_chat.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 15))
 

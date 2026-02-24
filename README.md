@@ -1,6 +1,6 @@
 # QUANT AI TERMINAL - Institutional-Grade Algorithmic Trading Engine
 
-**Version 10.1 | MetaTrader 5 | Python 3.9+**
+**Version 11.0 | MetaTrader 5 | Python 3.9+**
 
 ---
 
@@ -280,7 +280,7 @@ Before starting the bot:
 
 ```bash
 # Start the bot
-python app_completa.py
+python run.py
 
 # Or directly:
 python -m app.main
@@ -376,7 +376,7 @@ Trade Bot/
 ├── cache/                   # Price data cache
 ├── storico_operazioni_chiuse.csv  # Closed trades audit trail
 ├── portafoglio_aperto_live.csv    # Live positions snapshot
-├── app_completa.py          # Wrapper launcher
+├── run.py                   # Main launcher
 ├── .env                     # API keys (KEEP PRIVATE)
 ├── .gitignore              # Git exclusions
 └── README.md               # This file
@@ -542,4 +542,4 @@ Proprietary. Use for educational and personal trading purposes only.
 
 **QUANT AI TERMINAL** — Making institutional-grade algorithmic trading accessible to independent traders.
 
-*Last Updated: February 2026 | Version 10.1*
+*Last Updated: February 2026 | Version 11.0*

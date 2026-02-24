@@ -1,5 +1,5 @@
 """
-Live MetaTrader 5 Trading Engine (V10.1) with AI-Driven Portfolio Construction.
+Live MetaTrader 5 Trading Engine (V11.0) with AI-Driven Portfolio Construction.
 
 Core Architecture:
 1. PHASE 1 (Initial Scan): Analyze ALL assets via AI sentiment for portfolio construction
@@ -226,7 +226,7 @@ def esegui_trade_silenzioso(azione, ticker, budget_usd, orizzonte_temporale):
     if lotti < info.volume_min: return False, 0.0, 0.0
 
     magic_num = MAGIC_LONG_TERM if orizzonte_temporale == "LONG_TERM" else MAGIC_SHORT_TERM
-    commento = "LongTerm_V10.1" if orizzonte_temporale == "LONG_TERM" else "ShortTerm_V10.1"
+    commento = "LongTerm_V11.0" if orizzonte_temporale == "LONG_TERM" else "ShortTerm_V11.0"
 
     req = {
         "action": mt5.TRADE_ACTION_DEAL,
@@ -259,7 +259,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
         return
         
     acc = mt5.account_info()
-    if acc: custom_log(f"📡 Radar V10.1 (Massive Scan) connected to {acc.server}")
+    if acc: custom_log(f"📡 Radar V11.0 (Massive Scan) connected to {acc.server}")
 
     memoria_asset = {} 
     profitto_giornaliero = 0.0 
