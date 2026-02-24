@@ -1,0 +1,8 @@
+# ==========================================
+# STREAMLIT CONFIGURATION FILE
+# ==========================================
+
+[browser]
+# Disable telemetry and usage statistics collection.
+# Ensures institutional privacy and prevents data leakage to external servers.
+gatherUsageStats = false

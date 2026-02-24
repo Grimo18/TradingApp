@@ -26,6 +26,7 @@ import threading
 import requests
 import csv
 import os
+import socket
 from dotenv import load_dotenv
 from app.ai_brain import analizza_sentiment_ollama
 
@@ -40,6 +41,9 @@ COMMISSION_PER_LOT = 6.0  # USD commission per lot (bid-ask equivalent)
 # Magic numbers: Unique identifiers for long-term vs short-term positions
 MAGIC_SHORT_TERM = 1001  # Day-trading, high frequency, aggressive targets
 MAGIC_LONG_TERM = 2002   # Cassettista (investor), low frequency, durable positions
+
+# Telegram offset memory to avoid processing the same command twice
+ultimo_update_id_telegram = 0
 
 
 def invia_telegram(chat_ids_str, messaggio):
@@ -63,6 +67,44 @@ def invia_telegram(chat_ids_str, messaggio):
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         try: requests.post(url, json={"chat_id": chat_id, "text": messaggio}, timeout=2)
         except: pass 
+
+def controlla_comandi_telegram(chat_ids_str):
+    """
+    Listens for incoming Telegram commands and executes them remotely.
+    Implements a secure two-way communication channel.
+    """
+    global ultimo_update_id_telegram, stato_motore
+    if not TELEGRAM_BOT_TOKEN or not chat_ids_str: return
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={ultimo_update_id_telegram + 1}&timeout=1"
+    try:
+        res = requests.get(url, timeout=2).json()
+        if res.get("ok") and res.get("result"):
+            for update in res["result"]:
+                ultimo_update_id_telegram = update["update_id"]
+                messaggio = update.get("message", {})
+                testo = messaggio.get("text", "").strip().lower()
+                chat_id = str(messaggio.get("chat", {}).get("id", ""))
+                
+                # Security check: Only accept commands from authorized Chat IDs in the UI
+                chat_autorizzate = [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
+                if chat_id not in chat_autorizzate: continue
+
+                # 🛑 COMMAND: /stop (Remote Kill-Switch)
+                if testo == "/stop":
+                    invia_telegram(chat_id, "🛑 RECEIVED /STOP COMMAND.\nInitiating emergency shutdown and returning to Standby...")
+                    stato_motore = "CHIUSURA_FORZATA"
+                
+                # 📊 COMMAND: /status (Quick Portfolio Report)
+                elif testo == "/status":
+                    posizioni = mt5.positions_get()
+                    num_pos = len(posizioni) if posizioni else 0
+                    acc = mt5.account_info()
+                    equity = acc.equity if acc else 0.0
+                    invia_telegram(chat_id, f"📊 STATUS REPORT V11.0\nEngine State: {stato_motore}\nEquity: ${equity:.2f}\nOpen Positions: {num_pos}")
+                    
+    except Exception as e:
+        pass
 
 def scrivi_registro_csv(ticker, lotti, prezzo_apertura, prezzo_chiusura, profitto_netto, tipo_trade, orizzonte):
     """
@@ -272,6 +314,12 @@ def _loop_principale(mode, callbacks, param_iniziali):
     giorno_corrente = datetime.datetime.now().day # 🕒 Tiene traccia del giorno attuale
 
     while stato_motore != "SPENTO":
+        
+        # 📱 Listen for incoming remote commands via Telegram
+        tg_chat_attuale = parametri_attivi.get("tg_chat", "")
+        if tg_chat_attuale:
+            controlla_comandi_telegram(tg_chat_attuale)
+
         acc_live = mt5.account_info()
         if acc_live and callbacks.get("portfolio"):
             callbacks.get("portfolio")(acc_live.margin_free, acc_live.equity - acc_live.margin_free)
@@ -332,6 +380,18 @@ def _loop_principale(mode, callbacks, param_iniziali):
                     health_passed = False
                 else:
                     custom_log("   ✅ News API Key: CONFIGURED")
+
+                # 7. Resolve Local IP for Web Dashboard
+                try:
+                    # Connects to a dummy external address to find the active local network IP
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.connect(("8.8.8.8", 80))
+                    local_ip = s.getsockname()[0]
+                    s.close()
+                    custom_log(f"   🌐 Web Dashboard (LAN): http://{local_ip}:8501")
+                    custom_log(f"   💻 Web Dashboard (Local): http://localhost:8501")
+                except Exception:
+                    custom_log("   🌐 Web Dashboard: http://localhost:8501")
 
                 if not health_passed:
                     custom_log("🛑 HEALTH CHECK FAILED. Fix errors and retry.")
