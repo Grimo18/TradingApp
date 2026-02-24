@@ -1,4 +1,23 @@
-"""Motore LIVE MetaTrader 5 (V10.1 - Scansione Massiva Iniziale & Immunità)."""
+"""
+Live MetaTrader 5 Trading Engine (V10.1) with AI-Driven Portfolio Construction.
+
+Core Architecture:
+1. PHASE 1 (Initial Scan): Analyze ALL assets via AI sentiment for portfolio construction
+2. CONTINUOUS MONITORING: Track open positions with asymmetric risk/reward
+3. DYNAMIC RISK MANAGEMENT: Kill-switch on max drawdown, victory cooldowns on profits
+4. QUARANTINE SYSTEM: Prevent over-trading losers after consecutive stops
+
+Key Features:
+- Long-Term Immunity: Separate cassettista (investor) positions from speculation
+- Magic Numbers: MAGIC_SHORT_TERM (1001) vs MAGIC_LONG_TERM (2002) for classification
+- Spread Filtering: Reject trades when broker spreads exceed 0.2% thresholds
+- Friday Closure: Forex positions auto-closed before weekend gap risk
+
+Position Management:
+- Entry: AI sentiment score must exceed ±5 threshold to avoid noise
+- Exit: Dynamic target based on position horizon (short-term aggressive, long-term conservative)
+- Commission: $6.00 per lot deducted from P&L for realistic backtesting
+"""
 
 import MetaTrader5 as mt5
 import time
@@ -13,15 +32,31 @@ from app.ai_brain import analizza_sentiment_ollama
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
-stato_motore = "SPENTO" 
-parametri_attivi = {} 
-COMMISSION_PER_LOT = 6.0 
+# Global state machine: SPENTO → MONITORAGGIO → TRADING ↔ CHIUSURA_FORZATA
+stato_motore = "SPENTO"
+parametri_attivi = {}
+COMMISSION_PER_LOT = 6.0  # USD commission per lot (bid-ask equivalent)
 
-# --- MAGIC NUMBERS (Il DNA degli ordini) ---
-MAGIC_SHORT_TERM = 1001
-MAGIC_LONG_TERM = 2002
+# Magic numbers: Unique identifiers for long-term vs short-term positions
+MAGIC_SHORT_TERM = 1001  # Day-trading, high frequency, aggressive targets
+MAGIC_LONG_TERM = 2002   # Cassettista (investor), low frequency, durable positions
+
 
 def invia_telegram(chat_ids_str, messaggio):
+    """
+    Send Telegram notifications to one or more chat IDs.
+    
+    Implements multi-user support: comma-separated chat IDs are parsed
+    and each receives independent notification. Failures are silent to
+    prevent trading errors from notification issues.
+    
+    Args:
+        chat_ids_str (str): Single or comma-separated chat IDs (e.g., "123,456,789").
+        messaggio (str): Notification text (emoji prefixes help mobile scanning).
+    
+    Returns:
+        None: Side effect only (HTTP POST to Telegram API).
+    """
     if not TELEGRAM_BOT_TOKEN or not chat_ids_str: return
     lista_chat_ids = [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
     for chat_id in lista_chat_ids:
@@ -30,6 +65,26 @@ def invia_telegram(chat_ids_str, messaggio):
         except: pass 
 
 def scrivi_registro_csv(ticker, lotti, prezzo_apertura, prezzo_chiusura, profitto_netto, tipo_trade, orizzonte):
+    """
+    Log closed trade to persistent CSV file (audit trail).
+    
+    Creates or appends to storico_operazioni_chiuse.csv with:
+    - Trade metadata: ticker, direction, volume, entry/exit prices
+    - P&L: net profit after commission
+    - Classification: SHORT_TERM or LONG_TERM (for supervision)
+    
+    Args:
+        ticker (str): Asset symbol.
+        lotti (float): Volume in lots.
+        prezzo_apertura (float): Entry price.
+        prezzo_chiusura (float): Exit price.
+        profitto_netto (float): Profit/loss after commission (USD).
+        tipo_trade (str): "LONG" or "SHORT".
+        orizzonte (str): "LONG_TERM" or "SHORT_TERM".
+    
+    Returns:
+        None: Side effect only (file I/O).
+    """
     file_path = "storico_operazioni_chiuse.csv"
     file_exists = os.path.isfile(file_path)
     with open(file_path, mode='a', newline='', encoding='utf-8') as file:
@@ -40,6 +95,18 @@ def scrivi_registro_csv(ticker, lotti, prezzo_apertura, prezzo_chiusura, profitt
         writer.writerow([adesso.strftime("%Y-%m-%d"), adesso.strftime("%H:%M:%S"), ticker, tipo_trade, lotti, prezzo_apertura, prezzo_chiusura, f"{profitto_netto:.2f}", orizzonte])
 
 def aggiorna_csv_portafoglio_aperto(posizioni):
+    """
+    Update open portfolio CSV with live position data.
+    
+    Regenerates portafoglio_aperto_live.csv with current positions,
+    useful for real-time dashboard display and risk monitoring.
+    
+    Args:
+        posizioni (list): MT5 position objects from mt5.positions_get().
+    
+    Returns:
+        None: Side effect only (file I/O).
+    """
     file_path = "portafoglio_aperto_live.csv"
     with open(file_path, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
@@ -56,26 +123,97 @@ def aggiorna_csv_portafoglio_aperto(posizioni):
             writer.writerow([pos.symbol, data_acquisto.strftime("%Y-%m-%d %H:%M"), giorni_hold, tipo_trade, pos.volume, pos.price_open, f"{profitto_netto:.2f}", orizzonte])
 
 def classifica_asset(ticker):
+    """
+    Classify asset into category and recommended holding horizon.
+    
+    Classification logic:
+    - Crypto (BTC, ETH): Long-term cassettista (high volatility, secular uptrend)
+    - Forex (6-letter codes): Short-term speculation (tight spreads, mean reversion)
+    - Equities: Long-term cassettista (company value fundamentals)
+    
+    Args:
+        ticker (str): Asset symbol.
+    
+    Returns:
+        tuple: (category, holding_horizon)
+            - category: "CRYPTO", "FOREX", or "CASSETTISTA"
+            - holding_horizon: "LONG_TERM" or "SHORT_TERM"
+    """
     if "BTC" in ticker or "ETH" in ticker: return "CRYPTO", "LONG_TERM"
     if len(ticker) == 6 and ticker.isalpha(): return "FOREX", "SHORT_TERM"
     return "CASSETTISTA", "LONG_TERM"
 
 def is_mercato_aperto(ticker):
+    """
+    Check if market is currently open for live trading.
+    
+    Verification:
+    - Symbol must have valid tick data from MT5
+    - Tick age must be < 5 minutes (staleness check)
+    
+    Args:
+        ticker (str): Asset symbol.
+    
+    Returns:
+        bool: True if market is open and data is fresh, False otherwise.
+    """
     tick = mt5.symbol_info_tick(ticker)
     if not tick: return False
     if time.time() - tick.time > 300: return False
     return True
 
 def is_spread_accettabile(ticker):
+    """
+    Verify broker spread is within acceptable limits.
+    
+    Threshold: 0.2% of mid-price
+    Example: 1% price level with 0.2% spread = 0.002 max spread
+    
+    Args:
+        ticker (str): Asset symbol.
+    
+    Returns:
+        bool: True if spread < 0.2%, False otherwise.
+    """
     tick = mt5.symbol_info_tick(ticker)
     if not tick or tick.ask == 0: return False
     return (((tick.ask - tick.bid) / tick.ask) * 100) < 0.2
 
 def is_venerdi_chiusura():
+    """
+    Check if it's Friday closing hours (high gap risk).
+    
+    Threshold: Friday after 21:30 UTC (forex weekly close)
+    Used to force exit forex positions before weekend halts.
+    
+    Returns:
+        bool: True if Friday 21:30+ UTC, False otherwise.
+    """
     now = datetime.datetime.now()
     return now.weekday() == 4 and ((now.hour == 21 and now.minute >= 30) or now.hour > 21)
 
 def esegui_trade_silenzioso(azione, ticker, budget_usd, orizzonte_temporale):
+    """
+    Execute a market order with intelligent position sizing.
+    
+    Position Sizing Algorithm:
+    1. Query margin requirement for 1 lot
+    2. Calculate max lots: budget_usd / margin_per_lot
+    3. Round down to minimum lot step from broker
+    4. Validate against broker minimums
+    
+    Args:
+        azione (str): "BUY" or "SELL".
+        ticker (str): Asset symbol.
+        budget_usd (float): USD capital allocation for this trade.
+        orizzonte_temporale (str): "LONG_TERM" or "SHORT_TERM".
+    
+    Returns:
+        tuple: (success, lots_executed, price_executed)
+            - success (bool): True if order executed
+            - lots_executed (float): Volume actually sent to market
+            - price_executed (float): Fill price
+    """
     info = mt5.symbol_info(ticker)
     if not info: return False, 0.0, 0.0
     tipo = mt5.ORDER_TYPE_BUY if azione == "BUY" else mt5.ORDER_TYPE_SELL

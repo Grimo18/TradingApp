@@ -1,23 +1,60 @@
-"""Generazione report HTML della simulazione."""
+"""
+HTML report generation for backtest results and live trading performance.
+
+Produces institutional-grade PDF-ready HTML reports with embedded styling,
+suitable for fund presentations and regulatory documentation.
+"""
 
 import datetime
 from pathlib import Path
 
 
 def _format_percent(value):
+    """
+    Format a decimal value as a percentage string.
+    
+    Args:
+        value: Numeric value or None.
+    
+    Returns:
+        str: Formatted percentage (e.g., "12.34%") or "-" if invalid.
+    """
     if isinstance(value, (int, float)):
         return f"{value:.2%}"
     return "-"
 
 
 def _format_number(value):
+    """
+    Format a numeric value with thousands separators and 2 decimal places.
+    
+    Args:
+        value: Numeric value or None.
+    
+    Returns:
+        str: Formatted number (e.g., "1,234.56") or "-" if invalid.
+    """
     if isinstance(value, (int, float)):
         return f"{value:,.2f}"
     return "-"
 
 
 def generate_html_report(details, benchmark_metrics, strategy_metrics=None, output_dir="reports"):
-    """Crea un report HTML minimale e restituisce il path."""
+    """
+    Generate a minimalist HTML report of backtest/trading results.
+    
+    Creates a self-contained HTML file with inline CSS suitable for
+    email distribution and regulatory submission (no external dependencies).
+    
+    Args:
+        details (dict): Test metadata (ticker, capital, period dates).
+        benchmark_metrics (dict): Market benchmarks for comparison.
+        strategy_metrics (dict, optional): Trading strategy results.
+        output_dir (str): Directory for report output.
+    
+    Returns:
+        str: Absolute path to generated HTML file.
+    """
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

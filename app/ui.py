@@ -1,4 +1,15 @@
-"""Interfaccia grafica CustomTkinter V8.7 (Telegram Env & Multi-User)."""
+"""
+CustomTkinter User Interface (V8.7) - Telegram Integration & Multi-User Support.
+
+Institutional-grade dark mode dashboard for real-time trading control:
+- Mode selector: Backtest | Demo | Live
+- Parameter configuration panel (capital, max loss, watchlist)
+- Live activity terminal with trade logs
+- Portfolio metrics display (equity, liquidity, positions)
+- Control buttons: Start/Stop trading, Mode switching
+
+Color scheme optimized for extended monitoring (low eye strain on dark backgrounds).
+"""
 
 import threading
 import datetime
@@ -7,16 +18,17 @@ import customtkinter as ctk
 from app import config
 from app.mt5_engine import gestisci_connessione, aggiorna_parametri_e_avvia, ferma_trading, spegni_tutto
 
-C_BG = "#1e1e24"
-C_CARD = "#2a2a35"
-C_TEXT = "#ffffff"
-C_SUB = "#9ca3af"
-C_GREEN = "#4ade80"
-C_GREEN_DARK = "#22c55e"
-C_RED = "#f87171"
-C_RED_DARK = "#ef4444"
-C_TERM_BG = "#09090b"
-C_BORDER = "#3f3f46"
+# UI Color Constants (Institutional Dark Theme)
+C_BG = "#1e1e24"        # Main background
+C_CARD = "#2a2a35"      # Card/panel background
+C_TEXT = "#ffffff"      # Primary text
+C_SUB = "#9ca3af"       # Subtitle text (muted)
+C_GREEN = "#4ade80"     # Success state
+C_GREEN_DARK = "#22c55e"  # Success hover
+C_RED = "#f87171"       # Error state
+C_RED_DARK = "#ef4444"  # Error hover
+C_TERM_BG = "#09090b"   # Terminal background
+C_BORDER = "#3f3f46"    # Border color
 
 class TradingApp:
     def __init__(self):

@@ -1,4 +1,19 @@
-"""Modulo AI V11.0 - JSON Scoring (-10/+10) & Macro-Regime Globale (RSS)."""
+"""
+Advanced AI sentiment analysis module (V11.0) with macro-regime detection.
+
+Integrates multiple data sources:
+1. Groq API (Llama-3.3 70B quantitative model) for sentiment scoring
+2. RSS feeds (BBC) for global macro context (geopolitical, economic)
+3. Yahoo Finance + NewsAPI for asset-specific news
+4. Historical seasonality patterns (5-year monthly performance)
+
+Scoring system: -10 to +10 scale
+- -10: Maximum crash/capitulation signal
+- 0: Neutral/uncertain
+- +10: Maximum pump/euphoria signal
+
+Caching strategy: 10-minute TTL for reducing API calls while maintaining freshness.
+"""
 
 import yfinance as yf
 from groq import Groq
@@ -15,13 +30,30 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
 
+# In-memory caches for sentiment analysis and seasonality
 cache_analisi = {}
 cache_stagionalita = {}
 cache_macro = {"testo": "", "scadenza": 0}
-DURATA_CACHE = 600 # 10 minuti per le notizie
+# 10-minute TTL for asset-specific analysis
+DURATA_CACHE = 600
+
 
 def ottieni_macro_globale():
-    """Legge i feed RSS mondiali per capire se c'è guerra, crisi o pace."""
+    """
+    Retrieve global macro context from BBC RSS feeds.
+    
+    Monitors major geopolitical, economic, and financial news to identify
+    market regimes:
+    - War/Conflict: Kill-switch all speculative trades
+    - Central Bank Actions: High impact on rates and volatility
+    - Economic Crisis: Override seasonality patterns
+    - Normal Market: Apply standard technical/seasonal filters
+    
+    Returns:
+        str: Formatted string of top macro headlines (4 per feed).
+    
+    Note: Feeds update every 30 minutes, sufficient for intraday trading.
+    """
     global cache_macro
     if time.time() < cache_macro["scadenza"]:
         return cache_macro["testo"]
@@ -45,7 +77,22 @@ def ottieni_macro_globale():
         return "GLOBAL MACRO CONTEXT: Unavailable. Assume normal market conditions."
 
 def ottieni_bias_stagionale(ticker_pulito):
-    """Calcola la media statistica degli ultimi 5 anni per il mese corrente."""
+    """
+    Calculate historical seasonality bias based on 5-year monthly patterns.
+    
+    Analyzes the average monthly return for the current calendar month
+    across the past 5 years. Useful for identifying recurring seasonal patterns
+    (e.g., "Santa Claus Rally," "January Effect").
+    
+    Args:
+        ticker_pulito (str): Cleaned ticker symbol (e.g., "AAPL", "EURUSD").
+    
+    Returns:
+        str: Formatted string with historical average return for month
+             and BULLISH/BEARISH trend indicator.
+    
+    Note: Seasonality is overridden if macro context shows crisis signals.
+    """
     mese_corrente = datetime.datetime.now().month
     nome_mese = datetime.datetime.now().strftime("%B")
     
@@ -72,6 +119,20 @@ def ottieni_bias_stagionale(ticker_pulito):
     return cache_stagionalita[ticker_pulito]
 
 def ottieni_notizie_top(ticker):
+    """
+    Aggregate latest news from Yahoo Finance and NewsAPI.
+    
+    Provides recent asset-specific headlines and market commentary
+    for AI context and scoring considerations.
+    
+    Args:
+        ticker (str): Raw ticker symbol (may include exchange suffix like ".OQ").
+    
+    Returns:
+        tuple: (news_text, cleaned_ticker)
+            - news_text (str): Formatted multi-source news summary
+            - cleaned_ticker (str): Standardized ticker for APIs
+    """
     ticker_pulito = ticker.split('.')[0]
     
     if ticker_pulito == "BTCUSD": ticker_pulito = "BTC-USD"
@@ -102,6 +163,31 @@ def ottieni_notizie_top(ticker):
         return txt + "No major news found.", ticker_pulito
 
 def analizza_sentiment_ollama(ticker):
+    """
+    Execute comprehensive sentiment analysis using Groq Llama-3.3 70B.
+    
+    Multi-input analysis:
+    1. Global macro context (geopolitical, macro-economic)
+    2. Asset-specific news (company, economic calendar, technicals)
+    3. Historical seasonality (5-year monthly average)
+    
+    Output: JSON structured response with:
+    - trend: POSITIVO / NEGATIVO / NEUTRO
+    - score: -10 to +10 integer (quantitative signal strength)
+    - macro_context: Brief regime description
+    - reason: Brief explanation of score
+    
+    Caching: 10-minute TTL per asset to minimize API costs.
+    
+    Args:
+        ticker (str): Asset symbol.
+    
+    Returns:
+        tuple: (sentiment, score, message)
+            - sentiment (str): "POSITIVO", "NEGATIVO", or "NEUTRO"
+            - score (int): -10 to +10 quantitative score
+            - message (str): Human-readable AI explanation
+    """
     global cache_analisi
     ora_attuale = time.time()
 
