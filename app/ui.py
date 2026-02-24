@@ -14,9 +14,12 @@ Color scheme optimized for extended monitoring (low eye strain on dark backgroun
 import threading
 import datetime
 import customtkinter as ctk
-
+import json
 from app import config
 from app.mt5_engine import gestisci_connessione, aggiorna_parametri_e_avvia, ferma_trading, spegni_tutto
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # UI Color Constants (Institutional Dark Theme)
 C_BG = "#1e1e24"        # Main background
@@ -51,7 +54,7 @@ class TradingApp:
         self._build_layout()
         self._log_to_terminal("System status: Normal. Connection stable. Ready.")
         
-        # 💡 FIX SALDO ALL'AVVIO: Forza la connessione a MT5 appena si apre la finestra!
+        # 💡 FIX BALANCE AT STARTUP: Force connection to MT5 as soon as the window opens!
         self._change_mode("[ Demo ]")
 
     def _setup_fonts(self):
@@ -82,6 +85,17 @@ class TradingApp:
         left_panel.grid(row=1, column=0, sticky="nsew", padx=(30, 15), pady=(0, 20))
         left_panel.grid_columnconfigure(0, weight=1)
 
+        # --- CONFIGURATION PERSISTENCE ---
+        # Try to load the last used parameters from config.json
+        config_path = "config.json"
+        saved_config = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    saved_config = json.load(f)
+            except Exception:
+                saved_config = {}
+
         # 1. Capital & Risk
         card_risk = ctk.CTkFrame(left_panel, fg_color=C_CARD, corner_radius=8, border_width=1, border_color=C_BORDER)
         card_risk.grid(row=0, column=0, sticky="ew", pady=(0, 15))
@@ -89,15 +103,23 @@ class TradingApp:
         
         ctk.CTkLabel(card_risk, text="Capital & Risk", font=self.card_title_font, text_color=C_TEXT).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
         
+        # Maximum Capital Entry
         ctk.CTkLabel(card_risk, text="Maximum Capital ($)", font=self.label_font, text_color=C_SUB).grid(row=1, column=0, sticky="w", padx=15)
         self.entry_capitale = ctk.CTkEntry(card_risk, fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT, height=35)
         self.entry_capitale.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 10))
-        self.entry_capitale.insert(0, "100.00")
+        
+        # PERSISTENCE: Load saved budget or use 100.00 as default
+        last_budget = saved_config.get("budget", "100.00")
+        self.entry_capitale.insert(0, last_budget)
 
+        # Max Daily Drawdown Entry
         ctk.CTkLabel(card_risk, text="Max Daily Drawdown ($)", font=self.label_font, text_color=C_SUB).grid(row=5, column=0, sticky="w", padx=15)
         self.entry_loss = ctk.CTkEntry(card_risk, fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT, height=35)
         self.entry_loss.grid(row=6, column=0, sticky="ew", padx=15, pady=(0, 15))
-        self.entry_loss.insert(0, "30.00")
+        
+        # PERSISTENCE: Load saved loss or use 30.00 as default
+        last_loss = saved_config.get("loss", "30.00")
+        self.entry_loss.insert(0, last_loss)
 
         # 2. Asset Selection
         card_asset = ctk.CTkFrame(left_panel, fg_color=C_CARD, corner_radius=8, border_width=1, border_color=C_BORDER)
@@ -120,10 +142,17 @@ class TradingApp:
         ctk.CTkLabel(card_tg, text="Telegram Notifications", font=self.card_title_font, text_color=C_TEXT).grid(row=0, column=0, sticky="w", padx=15, pady=(15, 5))
         
         ctk.CTkLabel(card_tg, text="Chat IDs (comma-separated for multi-user)", font=self.label_font, text_color=C_SUB).grid(row=1, column=0, sticky="w", padx=15)
+        
+        # Retrieve the ID from the .env file (if it's not there, leave "" blank)
+        default_tg_id = os.getenv("TELEGRAM_CHAT_ID", "")
+
         self.entry_tg_chat = ctk.CTkEntry(card_tg, fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT, height=35, placeholder_text="es. 1234567, 9876543")
         self.entry_tg_chat.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 15))
+        
+        # Automatically inserts the recovered ID into the text field
+        self.entry_tg_chat.insert(0, default_tg_id)
 
-        # 4. Bottoni Start / Stop
+        # 4. Button Start / Stop
         frame_btns = ctk.CTkFrame(left_panel, fg_color="transparent")
         frame_btns.grid(row=3, column=0, sticky="ew")
         frame_btns.grid_columnconfigure((0,1), weight=1)

@@ -264,7 +264,12 @@ def esegui_trade_silenzioso(azione, ticker, budget_usd, orizzonte_temporale):
     prezzo = tick.ask if azione == "BUY" else tick.bid
     margine = mt5.order_calc_margin(tipo, ticker, 1.0, prezzo)
     if margine is None or margine == 0: margine = info.volume_min
-    lotti = round((budget_usd / margine) / info.volume_step) * info.volume_step
+    
+    # 🛡️ LEVERAGE PROTECTOR: Use only 50% of the allocated budget as margin 
+    # to avoid over-leveraging and instant stop-outs.
+    safe_budget = budget_usd * 0.5
+    lotti = round((safe_budget / margine) / info.volume_step) * info.volume_step
+    
     if lotti < info.volume_min: return False, 0.0, 0.0
 
     magic_num = MAGIC_LONG_TERM if orizzonte_temporale == "LONG_TERM" else MAGIC_SHORT_TERM
@@ -412,82 +417,77 @@ def _loop_principale(mode, callbacks, param_iniziali):
             # 🧠 AUTOPILOT: "FOLLOW THE SUN" GLOBAL DISCOVERY
             # ==========================================
             if "AUTOPILOT" in tickers_da_scansionare:
-                if not autopilot_tickers:
-                    # 🕒 Time-Zone Logic (UTC Time) to determine open markets
-                    ora_utc = datetime.datetime.utcnow().hour
-                    
-                    if 14 <= ora_utc < 21:
-                        region_code = "US"
-                        mercato_nome = "🇺🇸 Wall Street (US)"
-                        fallback_pool = ["NVDA", "TSLA", "PLTR", "MSTR", "AAPL"]
-                    elif 8 <= ora_utc < 14:
-                        region_code = "GB"
-                        mercato_nome = "🇪🇺 European Markets (UK/DE/FR)"
-                        # German, Dutch, French, and UK giants
-                        fallback_pool = ["SAP.DE", "ASML.AS", "LVMH.PA", "HSBA.L", "RACE.MI"] 
-                    else:
-                        region_code = "HK"
-                        mercato_nome = "🌏 Asian Markets (HK/JP)"
-                        # Alibaba, Tencent, Sony, Toyota, etc.
-                        fallback_pool = ["9988.HK", "0700.HK", "SONY.T", "7203.T", "BABA"] 
+                # Initialize persistent scan timer if not present in globals
+                if 'last_autopilot_scan' not in globals():
+                    global last_autopilot_scan
+                    last_autopilot_scan = 0
 
-                    custom_log(f"⚙️ AUTOPILOT (Follow The Sun): Target ➔ {mercato_nome}")
+                # Execute web discovery ONLY once per hour (3600s) to prevent loop spam
+                if time.time() - last_autopilot_scan > 3600:
+                    last_autopilot_scan = time.time()
                     
-                    trending_oggi = []
+                    # Determine active region based on UTC clock
+                    utc_h = datetime.datetime.utcnow().hour
+                    if 14 <= utc_h < 21:
+                        region, market_label = "US", "🇺🇸 Wall Street (US)"
+                        fallback = ["NVDA", "TSLA", "PLTR", "MSTR", "AAPL"]
+                    elif 8 <= utc_h < 14:
+                        region, market_label = "GB", "🇪🇺 Europe (UK/DE/FR)"
+                        fallback = ["SAP.DE", "ASML.AS", "LVMH.PA", "HSBA.L", "RACE.MI"] 
+                    else:
+                        region, market_label = "HK", "🌏 Asia (HK/JP)"
+                        fallback = ["9988.HK", "0700.HK", "SONY.T", "7203.T", "BABA"] 
+
+                    custom_log(f"⚙️ AUTOPILOT (Follow The Sun): Target ➔ {market_label}")
+                    
+                    trending_pool = []
                     try:
-                        # Fetches top searched stocks dynamically based on the active global region
-                        url = f"https://query1.finance.yahoo.com/v1/finance/trending/{region_code}"
+                        # Query Yahoo Finance for region-specific trending tickers
+                        url = f"https://query1.finance.yahoo.com/v1/finance/trending/{region}"
                         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
                         if res.status_code == 200:
-                            dati = res.json()
-                            trending_oggi = [q['symbol'] for q in dati['finance']['result'][0]['quotes'] if '^' not in q['symbol']]
+                            data = res.json()
+                            trending_pool = [q['symbol'] for q in data['finance']['result'][0]['quotes'] if '^' not in q['symbol']]
                     except Exception:
                         pass
 
-                    # Merge regional viral stocks with strong global fallbacks
-                    pool_candidati = list(set(trending_oggi + fallback_pool))
-                    trend_positivi = []
+                    # Merge discovered assets with region-specific fallbacks
+                    candidate_pool = list(set(trending_pool + fallback))
+                    valid_trends = []
                     
-                    for tk in pool_candidati:
-                        tk_base = tk.split('.')[0] # Strip Yahoo specific suffixes to test pure symbols
-                        tk_mt5 = tk
+                    for tk in candidate_pool:
+                        base_tk = tk.split('.')[0]
+                        mt5_tk = tk
                         
-                        # 🔄 Smart Broker Name Resolution
-                        # Tries to find the exact suffix your specific MT5 broker uses for global stocks
-                        if not mt5.symbol_info(tk_mt5):
-                            possibili_nomi = [
-                                tk, tk_base, f"{tk_base}.OQ", f"{tk_base}.DE", 
-                                f"{tk_base}.L", f"{tk_base}.MI", f"{tk_base}.HK", 
-                                f"{tk_base}USD", f"{tk_base}=X"
-                            ]
-                            for p in possibili_nomi:
-                                if mt5.symbol_info(p):
-                                    tk_mt5 = p
+                        # Resolve broker-specific suffixes (e.g., .OQ, .DE)
+                        if not mt5.symbol_info(mt5_tk):
+                            variants = [tk, base_tk, f"{base_tk}.OQ", f"{base_tk}.DE", f"{base_tk}.L", f"{base_tk}.HK", f"{base_tk}USD"]
+                            for v in variants:
+                                if mt5.symbol_info(v):
+                                    mt5_tk = v
                                     break
 
-                        # Verifies momentum on MetaTrader (must be open and trending)
-                        if mt5.symbol_info(tk_mt5) and is_mercato_aperto(tk_mt5):
-                            mt5.symbol_select(tk_mt5, True)
-                            rates = mt5.copy_rates_from_pos(tk_mt5, mt5.TIMEFRAME_D1, 0, 5)
+                        # Validate asset availability and bullish momentum
+                        if mt5.symbol_info(mt5_tk) and is_mercato_aperto(mt5_tk):
+                            mt5.symbol_select(mt5_tk, True)
+                            rates = mt5.copy_rates_from_pos(mt5_tk, mt5.TIMEFRAME_D1, 0, 5)
                             if rates is not None and len(rates) > 1:
-                                p_oggi = rates[-1]['close']
-                                p_storico = rates[0]['open']
-                                if p_oggi > 2: # Ignore extreme penny stocks
-                                    perf = ((p_oggi - p_storico) / p_storico) * 100
-                                    if perf > 1.0: # Must have positive recent momentum
-                                        trend_positivi.append((tk_mt5, perf))
+                                p_now, p_start = rates[-1]['close'], rates[0]['open']
+                                if p_now > 2: # Filter out low-liquidity penny stocks
+                                    perf = ((p_now - p_start) / p_start) * 100
+                                    if perf > 1.0: # Minimum momentum threshold
+                                        valid_trends.append((mt5_tk, perf))
 
-                    # Sort by highest momentum
-                    trend_positivi.sort(key=lambda x: x[1], reverse=True)
-                    autopilot_tickers = [x[0] for x in trend_positivi[:10]] # Keep top 10
+                    # Sort by performance and limit to top 10 assets
+                    valid_trends.sort(key=lambda x: x[1], reverse=True)
+                    autopilot_tickers = [x[0] for x in valid_trends[:10]]
 
                     if not autopilot_tickers:
-                        custom_log(f"⚠️ AUTOPILOT: No strong momentum detected in {mercato_nome} right now.")
+                        custom_log(f"⚠️ AUTOPILOT: No strong momentum detected in {market_label} at this time.")
                     else:
-                        azioni_str = ", ".join(autopilot_tickers)
-                        custom_log(f"🎯 AUTOPILOT: Added {len(autopilot_tickers)} trending assets from {mercato_nome}!")
+                        custom_log(f"🎯 AUTOPILOT: Added {len(autopilot_tickers)} trending assets from {market_label}!")
 
-                # Merge discovered dynamic assets into the scanning pool
+                # Silently merge memory-stored autopilot assets into the scanning queue
                 tickers_da_scansionare.remove("AUTOPILOT")
                 tickers_da_scansionare = list(set(tickers_da_scansionare + autopilot_tickers))
             # ==========================================
@@ -545,19 +545,25 @@ def _loop_principale(mode, callbacks, param_iniziali):
                     dist_dal_max = ((prezzo - memoria_asset[ticker]["high"]) / memoria_asset[ticker]["high"]) * 100
                     dist_dal_min = ((prezzo - memoria_asset[ticker]["low"]) / memoria_asset[ticker]["low"]) * 100
                     
+                    # If there is technical movement OR we are in Phase 1 (Portfolio Construction)
                     trigger_tecnico = (dist_dal_max <= -0.01 or dist_dal_min >= 0.01)
                     trigger_massivo = not primo_giro_completato
-
-                    # If there is technical movement OR we are in Phase 1 (Portfolio Construction)
+                    
                     if trigger_tecnico or trigger_massivo:
                         if trigger_massivo:
-                            print(f"[VS CODE LOG] 🚀 MASSIVE ANALYSIS: Checking {ticker} for portfolio construction...")
+                            custom_log(f"🚀 MASSIVE ANALYSIS: Checking {ticker} for portfolio construction...")
                         else:
-                            print(f"[VS CODE LOG] Movement on {ticker}. Querying AI...")
+                            custom_log(f"Movement on {ticker}. Querying AI...")
                             
-                        budget_usato_tot = sum(d["impegnato"] for d in memoria_asset.values())
-                        budget_base = budget_totale_max / max(1, len(tickers_da_scansionare))
-                        budget_da_usare = min(budget_base * 1.5, budget_totale_max - budget_usato_tot)
+                        # 🛡️ KICKSTART PROTECTOR: Force a small $15 investment during Phase 1
+                        # This prevents the bot from dumping $200 on weak initial signals.
+                        if not primo_giro_completato:
+                            budget_da_usare = 15.0 
+                        else:
+                            # Standard dynamic allocation for the active Radar phase
+                            budget_usato_tot = sum(d["impegnato"] for d in memoria_asset.values())
+                            budget_base = budget_totale_max / max(1, len(tickers_da_scansionare))
+                            budget_da_usare = min(budget_base * 1.2, budget_totale_max - budget_usato_tot)
 
                         if budget_da_usare >= 1.0:
                             # V11: Extract Sentiment, Score, and Message
@@ -565,21 +571,19 @@ def _loop_principale(mode, callbacks, param_iniziali):
                             
                             azione = None
                             
-                            # 🛡️ DYNAMIC ENTRY THRESHOLD
-                            # Phase 1 (Kickstart): Lower threshold (2) to build initial portfolio.
-                            # Standard Radar: Strict threshold (5) to filter out market noise.
-                            soglia_ingresso = 2 if trigger_massivo else 5
+                            # 🧠 SELECTIVE ENTRY THRESHOLD
+                            # We ignore weak noise (Scores 1, 2, 3). 
+                            # A minimum score of 4 is required to open ANY position.
+                            min_threshold = 4
                             
-                            if sentiment == "POSITIVO" and ai_score >= soglia_ingresso: 
+                            if sentiment == "POSITIVO" and ai_score >= min_threshold: 
                                 azione = "BUY"  
-                            elif sentiment == "NEGATIVO" and ai_score <= -soglia_ingresso: 
+                            elif sentiment == "NEGATIVO" and ai_score <= -min_threshold: 
                                 azione = "SELL" 
                             else:
-                                # Print weak signals only during Phase 1 for monitoring purposes
+                                # Log skipped weak signals during Phase 1 for transparency
                                 if trigger_massivo:
-                                    custom_log(f"🧠 AI Scan | {ticker}: Score {ai_score}/10. Too weak (needs {soglia_ingresso}), skipped.")
-                            
-                            if azione:
+                                    custom_log(f"🧠 AI Scan | {ticker}: Score {ai_score}/10. Too weak (needs {min_threshold}), skipped.")
                                 success, lotti, p_eseguito = esegui_trade_silenzioso(azione, ticker, budget_da_usare, orizzonte)
                                 if success:
                                     radar_ticks = 0 

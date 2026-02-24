@@ -4,34 +4,53 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import datetime
+import json
+import os
 
 # Page Configuration
 st.set_page_config(page_title="QUANT AI TERMINAL", page_icon="🏦", layout="wide")
+
+# 🌍 GLOBAL SENSOR (Calculated at the top)
+ora_utc = datetime.datetime.utcnow().hour
+if 14 <= ora_utc < 21:
+    mercato_attivo = "🇺🇸 Wall Street (US)"
+    bandiera = "🇺🇸"
+elif 8 <= ora_utc < 14:
+    mercato_attivo = "🇪🇺 Europe (UK/DE/FR)"
+    bandiera = "🇪🇺"
+else:
+    mercato_attivo = "🌏 Asia (HK/JP)"
+    bandiera = "🌏"
 
 # --- SIDEBAR & SETTINGS ---
 with st.sidebar:
     st.header("⚙️ Terminal Settings")
     
-    # 🌍 ACTIVE MARKET SENSOR
-    ora_utc = datetime.datetime.utcnow().hour
-    if 14 <= ora_utc < 21:
-        mercato_attivo = "🇺🇸 Wall Street (US)"
-    elif 8 <= ora_utc < 14:
-        mercato_attivo = "🇪🇺 Europe (UK/DE/FR)"
-    else:
-        mercato_attivo = "🌏 Asia (HK/JP)"
-        
     orario_str = datetime.datetime.utcnow().strftime("%H:%M UTC")
-    
     st.metric("🌍 Active Global Market", mercato_attivo, f"Time: {orario_str}")
     st.divider()
     
-    st.info("💡 **Theme Settings:**\nTo switch between Dark and Light mode, click the 3 dots in the top right corner of the page ➔ **Settings** ➔ **Theme**.")
+    st.info("💡 **Theme Settings:**\nTo switch between Dark and Light mode, click the 3 dots in the top right corner ➔ **Settings** ➔ **Theme**.")
     st.divider()
     st.success("🟢 Multi-Speed Data Stream Active\n• Metrics: 2s\n• Charts: 60s")
 
-st.title("🏦 Quant AI Terminal - Live Dashboard")
-st.markdown("Remote Web Monitoring via Tailscale | Engine V11.0")
+# --- MAIN HEADER ---
+st.title(f"🏦 Quant AI Terminal {bandiera}")
+st.markdown(f"**Engine V11.0 | Active Global Market: {mercato_attivo}**")
+
+# 🎯 RADAR LOCK-ON (Reads the active config)
+config_path = os.path.join(os.path.dirname(__file__), "config.json")
+try:
+    with open(config_path, "r") as f:
+        config_data = json.load(f)
+        tickers_target = config_data.get("ticker", "N/A")
+        # Aggiunge la bandiera visivamente se c'è l'Autopilot
+        display_tickers = tickers_target.replace("AUTOPILOT", f"AUTOPILOT {bandiera}")
+except Exception:
+    display_tickers = "Scanning configuration..."
+
+st.info(f"📡 **Radar Lock-On:** {display_tickers}")
+st.divider()
 
 # Connect to MT5 in read-only mode
 if not mt5.initialize():
