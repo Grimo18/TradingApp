@@ -84,24 +84,24 @@ def generate_html_report(details, benchmark_metrics, strategy_metrics=None, outp
       <h2>Report simulazione</h2>
       <div class=\"grid\">
         <div class=\"item\"><span>Ticker</span>: {details.get("ticker", "-")}</div>
-        <div class=\"item\"><span>Capitale</span>: {details.get("capital", "-")}</div>
-        <div class=\"item\"><span>Periodo</span>: {details.get("start", "-")} -> {details.get("end", "-")}</div>
-        <div class=\"item\"><span>Generato</span>: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
+        <div class="item"><span>Capital</span>: {details.get("capital", "-")}</div>
+        <div class="item"><span>Period</span>: {details.get("start", "-")} -> {details.get("end", "-")}</div>
+        <div class="item"><span>Generated</span>: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
       </div>
     </div>
     <div class=\"card\">
-      <h2>Metriche mercato (benchmark)</h2>
+      <h2>Market Metrics (Benchmark)</h2>
       <div class=\"grid\">
-        <div class=\"item\"><span>Rendimento totale</span>: {_format_percent(benchmark_metrics.get("total_return"))}</div>
-        <div class=\"item\"><span>CAGR</span>: {_format_percent(benchmark_metrics.get("cagr"))}</div>
-        <div class=\"item\"><span>Max Drawdown</span>: {_format_percent(benchmark_metrics.get("max_drawdown"))}</div>
-        <div class=\"item\"><span>Volatilita</span>: {_format_percent(benchmark_metrics.get("volatility"))}</div>
+        <div class="item"><span>Total Return</span>: {_format_percent(benchmark_metrics.get("total_return"))}</div>
+        <div class="item"><span>CAGR</span>: {_format_percent(benchmark_metrics.get("cagr"))}</div>
+        <div class="item"><span>Max Drawdown</span>: {_format_percent(benchmark_metrics.get("max_drawdown"))}</div>
+        <div class="item"><span>Volatility</span>: {_format_percent(benchmark_metrics.get("volatility"))}</div>
       </div>
     </div>
     <div class=\"card\">
-      <h2>Metriche strategia</h2>
+      <h2>Strategy Metrics</h2>
       <div class=\"grid\">
-        <div class=\"item\"><span>Rendimento totale</span>: {_format_percent(strategy_metrics.get("total_return"))}</div>
+        <div class="item"><span>Total Return</span>: {_format_percent(strategy_metrics.get("total_return"))}</div>
         <div class=\"item\"><span>CAGR</span>: {_format_percent(strategy_metrics.get("cagr"))}</div>
         <div class=\"item\"><span>Max Drawdown</span>: {_format_percent(strategy_metrics.get("max_drawdown"))}</div>
         <div class=\"item\"><span>Sharpe</span>: {_format_number(strategy_metrics.get("sharpe"))}</div>

@@ -74,7 +74,7 @@ def get_price_history(ticker, start, end, cache_dir="cache"):
 
     data = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
     if data.empty:
-        raise ValueError("Dati di mercato non disponibili")
+        raise ValueError("Market data not available")
 
     data.to_csv(cache_path)
     return data
@@ -107,7 +107,7 @@ def compute_market_metrics(close_prices):
 
     close = close_prices.dropna()
     if close.empty:
-        raise ValueError("Serie prezzi vuota")
+        raise ValueError("Empty price series")
 
     daily_returns = close.pct_change().dropna()
     if daily_returns.empty:

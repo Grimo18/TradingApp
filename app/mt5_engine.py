@@ -90,7 +90,7 @@ def scrivi_registro_csv(ticker, lotti, prezzo_apertura, prezzo_chiusura, profitt
     with open(file_path, mode='a', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         if not file_exists:
-            writer.writerow(["Data Chiusura", "Ora", "Asset", "Tipo", "Lotti", "Prezzo In", "Prezzo Out", "P/L Netto ($)", "Orizzonte"])
+            writer.writerow(["Close Date", "Time", "Asset", "Type", "Lots", "Entry Price", "Exit Price", "Net P/L ($)", "Horizon"])
         adesso = datetime.datetime.now()
         writer.writerow([adesso.strftime("%Y-%m-%d"), adesso.strftime("%H:%M:%S"), ticker, tipo_trade, lotti, prezzo_apertura, prezzo_chiusura, f"{profitto_netto:.2f}", orizzonte])
 
@@ -110,14 +110,14 @@ def aggiorna_csv_portafoglio_aperto(posizioni):
     file_path = "portafoglio_aperto_live.csv"
     with open(file_path, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-        writer.writerow(["Ticker", "Data Acquisto", "Giorni Hold", "Tipo Trade", "Lotti", "Prezzo In", "Profitto Attuale ($)", "Orizzonte (Magic)"])
+        writer.writerow(["Ticker", "Entry Date", "Hold Days", "Trade Type", "Lots", "Entry Price", "Current Profit ($)", "Horizon (Magic)"])
         
         adesso = datetime.datetime.now()
         for pos in posizioni:
             data_acquisto = datetime.datetime.fromtimestamp(pos.time)
             giorni_hold = (adesso - data_acquisto).days
             tipo_trade = "LONG" if pos.type == mt5.POSITION_TYPE_BUY else "SHORT"
-            orizzonte = "LUNGO TERMINE 🛡️" if pos.magic == MAGIC_LONG_TERM else "BREVE TERMINE ⚡"
+            orizzonte = "LONG TERM 🛡️" if pos.magic == MAGIC_LONG_TERM else "SHORT TERM ⚡"
             profitto_netto = pos.profit - (pos.volume * COMMISSION_PER_LOT)
             
             writer.writerow([pos.symbol, data_acquisto.strftime("%Y-%m-%d %H:%M"), giorni_hold, tipo_trade, pos.volume, pos.price_open, f"{profitto_netto:.2f}", orizzonte])
@@ -279,18 +279,76 @@ def _loop_principale(mode, callbacks, param_iniziali):
         if stato_motore == "TRADING":
             if ultimo_stato_ui != True: imposta_ui(True); ultimo_stato_ui = True
             
-            # Reset delle variabili all'avvio del bottone START
-            if session_start_time is None: 
+            # Reset of variables on START button press
+            if session_start_time is None:
                 session_start_time = time.time()
                 primo_giro_completato = False
+                autopilot_tickers = [] # 🧠 Dynamic memory of Autopilot
                 custom_log("🚀 PHASE 1: Portfolio Construction. AI analysis on all assets...")
-            
+
             stringa_tickers = parametri_attivi.get("ticker", "EURUSD")
             budget_totale_max = float(parametri_attivi.get("budget", 100))
             max_loss = float(parametri_attivi.get("loss", "30"))
             tg_chat = parametri_attivi.get("tg_chat", "")
-            
+
             tickers_da_scansionare = [t.strip() for t in stringa_tickers.split(",") if t.strip()]
+            
+            # ==========================================
+            # 🧠 AUTOPILOT VIRAL: SENTIMENT DISCOVERY
+            # ==========================================
+            if "AUTOPILOT" in tickers_da_scansionare:
+                if not autopilot_tickers:
+                    custom_log("⚙️ AUTOPILOT: Fetching trending stocks and viral assets globally...")
+                    trending_oggi = []
+                    try:
+                        # Reads top stocks most searched globally on Yahoo at this instant
+                        url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
+                        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+                        if res.status_code == 200:
+                            dati = res.json()
+                            trending_oggi = [q['symbol'] for q in dati['finance']['result'][0]['quotes'] if '^' not in q['symbol']]
+                    except Exception:
+                        pass
+                    
+                    # Merges viral stocks with market selection
+                    pool_candidati = list(set(trending_oggi + ["NVDA", "TSLA", "PLTR", "MSTR", "BTC-USD"]))
+                    
+                    trend_positivi = []
+                    for tk in pool_candidati:
+                        # Adapts American names to MetaTrader format
+                        tk_mt5 = tk
+                        if not mt5.symbol_info(tk_mt5):
+                            if mt5.symbol_info(f"{tk}.OQ"): tk_mt5 = f"{tk}.OQ"
+                            elif mt5.symbol_info(f"{tk}=X"): tk_mt5 = f"{tk}=X"
+                            elif mt5.symbol_info(f"{tk}USD"): tk_mt5 = f"{tk}USD"
+                            
+                        # Verifies momentum on MetaTrader
+                        if mt5.symbol_info(tk_mt5):
+                            mt5.symbol_select(tk_mt5, True)
+                            rates = mt5.copy_rates_from_pos(tk_mt5, mt5.TIMEFRAME_D1, 0, 5)
+                            if rates is not None and len(rates) > 1:
+                                p_oggi = rates[-1]['close']
+                                p_storico = rates[0]['open']
+                                if p_oggi > 10: # Excludes penny stocks
+                                    perf = ((p_oggi - p_storico) / p_storico) * 100
+                                    if perf > 1.5: # Must be pumping at least 1.5% recently
+                                        trend_positivi.append((tk_mt5, perf))
+                    
+                    # Sorts by most violent pump and takes first 10
+                    trend_positivi.sort(key=lambda x: x[1], reverse=True)
+                    autopilot_tickers = [x[0] for x in trend_positivi[:10]]
+                    
+                    if not autopilot_tickers:
+                        custom_log("⚠️ AUTOPILOT: No significant viral trend detected right now.")
+                    else:
+                        azioni_str = ", ".join(autopilot_tickers)
+                        custom_log(f"🎯 AUTOPILOT: Found {len(autopilot_tickers)} VIRAL stocks! Adding to portfolio...")
+                
+                # 🔥 THE REAL MAGIC: Removes "AUTOPILOT" keyword and merges lists!
+                tickers_da_scansionare.remove("AUTOPILOT")
+                tickers_da_scansionare = list(set(tickers_da_scansionare + autopilot_tickers))
+            # ==========================================
+
             venerdi_sera = is_venerdi_chiusura()
 
             # 🔄 MIDNIGHT RESET
@@ -414,19 +472,19 @@ def _loop_principale(mode, callbacks, param_iniziali):
                         hard_stop_loss = -max(limite_base * 4.0, costo_commissioni * 5.0) 
                         
                         if profitto_netto <= hard_stop_loss:
-                            chiudi_ora, motivo_chiusura = True, f"Stop Crollo Strutturale ({hard_stop_loss:.1f}$)"
+                            chiudi_ora, motivo_chiusura = True, f"Structural Collapse Stop ({hard_stop_loss:.1f}$)"
                         elif profitto_netto > (costo_commissioni * 3) and diff_dal_picco <= -3.0: 
-                            chiudi_ora, motivo_chiusura = True, "Trailing Profit Cassettista"
+                            chiudi_ora, motivo_chiusura = True, "Long-Term Trailing Profit"
                     else:
                         hard_take_profit = max(limite_base, costo_commissioni * 2.0)
                         hard_stop_loss = -max(limite_base * 1.5, costo_commissioni * 2.5)
 
                         if profitto_netto >= hard_take_profit: 
-                            chiudi_ora, motivo_chiusura = True, f"Target Raggiunto (+{hard_take_profit:.1f}$)"
+                            chiudi_ora, motivo_chiusura = True, f"Target Reached (+{hard_take_profit:.1f}$)"
                         elif profitto_netto <= hard_stop_loss:
-                            chiudi_ora, motivo_chiusura = True, f"Stop Leva Finanziaria ({hard_stop_loss:.1f}$)"
+                            chiudi_ora, motivo_chiusura = True, f"Leverage Stop Loss ({hard_stop_loss:.1f}$)"
                         elif venerdi_sera:
-                            chiudi_ora, motivo_chiusura = True, "Scudo Weekend Forex"
+                            chiudi_ora, motivo_chiusura = True, "Friday Weekend Shield"
                         elif profitto_netto > 0 and diff_dal_picco <= -0.05: 
                             chiudi_ora, motivo_chiusura = True, "Trailing Profit Forex"
 

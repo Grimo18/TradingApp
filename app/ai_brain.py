@@ -67,11 +67,11 @@ def ottieni_macro_globale():
     try:
         for url in url_feed:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:4]: # Prende le prime 4 notizie per feed
+            for entry in feed.entries[:4]: # Gets first 4 news items per feed
                 macro_news += f"- {entry.title}\n"
         
         cache_macro["testo"] = macro_news
-        cache_macro["scadenza"] = time.time() + 1800 # Aggiorna la macro ogni 30 min
+        cache_macro["scadenza"] = time.time() + 1800 # Updates macro context every 30 min
         return macro_news
     except Exception:
         return "GLOBAL MACRO CONTEXT: Unavailable. Assume normal market conditions."

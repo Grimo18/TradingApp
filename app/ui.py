@@ -40,7 +40,10 @@ class TradingApp:
         self.app.configure(fg_color=C_BG)
         
         self.watchlist_map = {
-            "🌍 Institutional Mega-Mix (30 Assets)": "EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, AAPL.OQ, MSFT.OQ, NVDA.OQ, TSLA.OQ, AMZN.OQ, META.OQ, GOOGL.OQ, NFLX.OQ, AMD.OQ, INTC.OQ, QCOM.OQ, CSCO.OQ, PEP.OQ, COST.OQ, SBUX.OQ, PYPL.OQ, MU.OQ, TXN.OQ, INTU.OQ, AMAT.OQ, CMCSA.OQ, GILD.OQ, MDLZ.OQ",
+            "👑 OMNIVERSO: Titan 45 + Defens + Viral Trend": "AUTOPILOT, EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, AAPL.OQ, MSFT.OQ, NVDA.OQ, TSLA.OQ, AMZN.OQ, META.OQ, GOOGL.OQ, NFLX.OQ, AMD.OQ, INTC.OQ, QCOM.OQ, CSCO.OQ, PEP.OQ, COST.OQ, SBUX.OQ, PYPL.OQ, MU.OQ, TXN.OQ, INTU.OQ, AMAT.OQ, CMCSA.OQ, GILD.OQ, MDLZ.OQ, PLTR.OQ, LMT, RTX, GD, NOC, WDC.OQ, SMCI.OQ, CRWD.OQ, PANW.OQ, NOW.OQ, UBER.OQ, ABNB.OQ, COIN.OQ, MSTR.OQ, HOOD.OQ",
+            "🚀 AUTOPILOT PURO: Solo Notizie Virali": "AUTOPILOT",
+            "⚔️ Pacchetto Difesa & Quant Tech": "PLTR.OQ, LMT, RTX, GD, NOC, MU.OQ, WDC.OQ",
+            "🛡️ Institutional Mega-Mix (30 Assets)": "EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, AAPL.OQ, MSFT.OQ, NVDA.OQ, TSLA.OQ, AMZN.OQ, META.OQ, GOOGL.OQ, NFLX.OQ, AMD.OQ, INTC.OQ, QCOM.OQ, CSCO.OQ, PEP.OQ, COST.OQ, SBUX.OQ, PYPL.OQ, MU.OQ, TXN.OQ, INTU.OQ, AMAT.OQ, CMCSA.OQ, GILD.OQ, MDLZ.OQ",
             "🦅 Top 5 Big Tech USA": "NVDA.OQ, TSLA.OQ, AAPL.OQ, MSFT.OQ, META.OQ, AMZN.OQ",
             "💱 Top 5 Forex Majors": "EURUSD, GBPUSD, USDJPY, USDCAD, AUDUSD",
             "🪙 Top Crypto Asset": "BTCUSD, ETHUSD"
