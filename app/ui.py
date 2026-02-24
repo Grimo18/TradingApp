@@ -183,7 +183,6 @@ class TradingApp:
         return {
             "ticker": tickers_reali or "EURUSD", 
             "budget": self.entry_capitale.get().strip() or "100",
-            "target": self.entry_target.get().strip() or "50",
             "loss": self.entry_loss.get().strip() or "30",
             "tg_chat": self.entry_tg_chat.get().strip() # Ora prende SOLO la chat ID
         }

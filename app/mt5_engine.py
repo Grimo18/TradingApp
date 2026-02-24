@@ -149,11 +149,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
             
             stringa_tickers = parametri_attivi.get("ticker", "EURUSD")
             budget_totale_max = float(parametri_attivi.get("budget", 100))
-            
-            target_profit_str = parametri_attivi.get("target", "50")
-            max_loss_str = parametri_attivi.get("loss", "30")
-            target_profit = float(target_profit_str) if target_profit_str else 50.0
-            max_loss = float(max_loss_str) if max_loss_str else 30.0
+            max_loss = float(parametri_attivi.get("loss", "30"))
             tg_chat = parametri_attivi.get("tg_chat", "")
             
             tickers_da_scansionare = [t.strip() for t in stringa_tickers.split(",") if t.strip()]
