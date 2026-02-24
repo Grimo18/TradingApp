@@ -407,7 +407,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
             tg_chat = parametri_attivi.get("tg_chat", "")
 
             tickers_da_scansionare = [t.strip() for t in stringa_tickers.split(",") if t.strip()]
-            
+
             # ==========================================
             # 🧠 AUTOPILOT VIRAL: SENTIMENT DISCOVERY
             # ==========================================
@@ -416,7 +416,6 @@ def _loop_principale(mode, callbacks, param_iniziali):
                     custom_log("⚙️ AUTOPILOT: Fetching trending stocks and viral assets globally...")
                     trending_oggi = []
                     try:
-                        # Reads top stocks most searched globally on Yahoo at this instant
                         url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
                         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
                         if res.status_code == 200:
@@ -424,42 +423,37 @@ def _loop_principale(mode, callbacks, param_iniziali):
                             trending_oggi = [q['symbol'] for q in dati['finance']['result'][0]['quotes'] if '^' not in q['symbol']]
                     except Exception:
                         pass
-                    
-                    # Merges viral stocks with market selection
+
                     pool_candidati = list(set(trending_oggi + ["NVDA", "TSLA", "PLTR", "MSTR", "BTC-USD"]))
-                    
                     trend_positivi = []
+                    
                     for tk in pool_candidati:
-                        # Adapts American names to MetaTrader format
                         tk_mt5 = tk
                         if not mt5.symbol_info(tk_mt5):
                             if mt5.symbol_info(f"{tk}.OQ"): tk_mt5 = f"{tk}.OQ"
                             elif mt5.symbol_info(f"{tk}=X"): tk_mt5 = f"{tk}=X"
                             elif mt5.symbol_info(f"{tk}USD"): tk_mt5 = f"{tk}USD"
-                            
-                        # Verifies momentum on MetaTrader
+
                         if mt5.symbol_info(tk_mt5):
                             mt5.symbol_select(tk_mt5, True)
                             rates = mt5.copy_rates_from_pos(tk_mt5, mt5.TIMEFRAME_D1, 0, 5)
                             if rates is not None and len(rates) > 1:
                                 p_oggi = rates[-1]['close']
                                 p_storico = rates[0]['open']
-                                if p_oggi > 10: # Excludes penny stocks
+                                if p_oggi > 10: 
                                     perf = ((p_oggi - p_storico) / p_storico) * 100
-                                    if perf > 1.5: # Must be pumping at least 1.5% recently
+                                    if perf > 1.5: 
                                         trend_positivi.append((tk_mt5, perf))
-                    
-                    # Sorts by most violent pump and takes first 10
+
                     trend_positivi.sort(key=lambda x: x[1], reverse=True)
                     autopilot_tickers = [x[0] for x in trend_positivi[:10]]
-                    
+
                     if not autopilot_tickers:
                         custom_log("⚠️ AUTOPILOT: No significant viral trend detected right now.")
                     else:
                         azioni_str = ", ".join(autopilot_tickers)
                         custom_log(f"🎯 AUTOPILOT: Found {len(autopilot_tickers)} VIRAL stocks! Adding to portfolio...")
-                
-                # 🔥 THE REAL MAGIC: Removes "AUTOPILOT" keyword and merges lists!
+
                 tickers_da_scansionare.remove("AUTOPILOT")
                 tickers_da_scansionare = list(set(tickers_da_scansionare + autopilot_tickers))
             # ==========================================
@@ -536,27 +530,31 @@ def _loop_principale(mode, callbacks, param_iniziali):
                             sentiment, ai_score, msg_ai = analizza_sentiment_ollama(ticker)
                             
                             azione = None
-                            # 🛡️ ENTRY THRESHOLD: 5 out of 10. Filters out weak market noise.
-                            soglia_ingresso = 5 
+                            
+                            # 🛡️ DYNAMIC ENTRY THRESHOLD
+                            # Phase 1 (Kickstart): Lower threshold (2) to build initial portfolio.
+                            # Standard Radar: Strict threshold (5) to filter out market noise.
+                            soglia_ingresso = 2 if trigger_massivo else 5
                             
                             if sentiment == "POSITIVO" and ai_score >= soglia_ingresso: 
                                 azione = "BUY"  
                             elif sentiment == "NEGATIVO" and ai_score <= -soglia_ingresso: 
                                 azione = "SELL" 
-                            elif trigger_massivo:
-                                # If we are in kickstart but AI gives a weak score (e.g., 2 or -3), stay idle
-                                pass
+                            else:
+                                # Print weak signals only during Phase 1 for monitoring purposes
+                                if trigger_massivo:
+                                    custom_log(f"🧠 AI Scan | {ticker}: Score {ai_score}/10. Too weak (needs {soglia_ingresso}), skipped.")
                             
                             if azione:
                                 success, lotti, p_eseguito = esegui_trade_silenzioso(azione, ticker, budget_da_usare, orizzonte)
                                 if success:
                                     radar_ticks = 0 
                                     icona = "🛡️" if orizzonte == "LONG_TERM" else "⚡"
-                                    custom_log(f"🤖 AI {azione} {icona} | {ticker} | {msg_ai} (Ord: {lotti})")
-                                    invia_telegram(tg_chat, f"{'🟢' if azione=='BUY' else '🔴'} NUOVO {azione} {icona}: {ticker}\nPrezzo: {p_eseguito}\nAI: {msg_ai}")
+                                    custom_log(f"🤖 AI {azione} {icona} | {ticker} | 🤖 Score: {ai_score}/10 | {msg_ai} (Ord: {lotti})")
+                                    invia_telegram(tg_chat, f"{'🟢' if azione=='BUY' else '🔴'} NEW {azione} {icona}: {ticker}\nPrice: {p_eseguito}\nAI Score: {ai_score}/10\nDetails: {msg_ai}")
                                     memoria_asset[ticker]["impegnato"] = budget_da_usare
                                     memoria_asset[ticker]["picco_trade"] = p_eseguito
-                                    time.sleep(1.0) # Anti-spam delay for multiple purchases
+                                    time.sleep(1.0) # Anti-spam delay ONLY after successful execution
                                     
                         memoria_asset[ticker]["high"] = prezzo
                         memoria_asset[ticker]["low"] = prezzo
