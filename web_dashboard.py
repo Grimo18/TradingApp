@@ -139,6 +139,7 @@ def render_live_table():
         df_live = df_live[['ticket', 'symbol', 'type', 'volume', 'price_open', 'price_current', 'profit', 'comment']].copy()
         df_live['type'] = df_live['type'].map({0: 'BUY 🟢', 1: 'SELL 🔴'})
         df_live['profit'] = df_live['profit'].apply(lambda x: f"${x:.2f}")
+        df_live.rename(columns={'comment': '🤖 AI Insights'}, inplace=True)
         
         st.dataframe(df_live, use_container_width=True, hide_index=True)
         

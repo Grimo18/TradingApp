@@ -234,27 +234,9 @@ def is_venerdi_chiusura():
     now = datetime.datetime.now()
     return now.weekday() == 4 and ((now.hour == 21 and now.minute >= 30) or now.hour > 21)
 
-def esegui_trade_silenzioso(azione, ticker, budget_usd, orizzonte_temporale):
+def esegui_trade_silenzioso(azione, ticker, budget_usd, orizzonte_temporale, commento_ai=""):
     """
-    Execute a market order with intelligent position sizing.
-    
-    Position Sizing Algorithm:
-    1. Query margin requirement for 1 lot
-    2. Calculate max lots: budget_usd / margin_per_lot
-    3. Round down to minimum lot step from broker
-    4. Validate against broker minimums
-    
-    Args:
-        azione (str): "BUY" or "SELL".
-        ticker (str): Asset symbol.
-        budget_usd (float): USD capital allocation for this trade.
-        orizzonte_temporale (str): "LONG_TERM" or "SHORT_TERM".
-    
-    Returns:
-        tuple: (success, lots_executed, price_executed)
-            - success (bool): True if order executed
-            - lots_executed (float): Volume actually sent to market
-            - price_executed (float): Fill price
+    Execute a market order with intelligent position sizing and AI reasoning in comments.
     """
     info = mt5.symbol_info(ticker)
     if not info: return False, 0.0, 0.0
@@ -266,14 +248,17 @@ def esegui_trade_silenzioso(azione, ticker, budget_usd, orizzonte_temporale):
     if margine is None or margine == 0: margine = info.volume_min
     
     # 🛡️ LEVERAGE PROTECTOR: Use only 50% of the allocated budget as margin 
-    # to avoid over-leveraging and instant stop-outs.
     safe_budget = budget_usd * 0.5
     lotti = round((safe_budget / margine) / info.volume_step) * info.volume_step
     
     if lotti < info.volume_min: return False, 0.0, 0.0
 
     magic_num = MAGIC_LONG_TERM if orizzonte_temporale == "LONG_TERM" else MAGIC_SHORT_TERM
-    commento = "LongTerm_V11.0" if orizzonte_temporale == "LONG_TERM" else "ShortTerm_V11.0"
+    
+    # 🧠 AI REASONING PERSISTENCE: Truncate message to fit MT5 comment limit (31 chars)
+    # Format: "AI:[Score] [Reason...]"
+    clean_msg = commento_ai.replace("🤖 Score:", "").strip()
+    final_comment = f"AI:{clean_msg[:25]}"
 
     req = {
         "action": mt5.TRADE_ACTION_DEAL,
@@ -283,13 +268,27 @@ def esegui_trade_silenzioso(azione, ticker, budget_usd, orizzonte_temporale):
         "price": prezzo,
         "deviation": 20,
         "magic": magic_num,
-        "comment": commento,
+        "comment": final_comment,
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }
     res = mt5.order_send(req)
     if res.retcode != mt5.TRADE_RETCODE_DONE: return False, 0.0, 0.0
     return True, lotti, res.price
+
+def get_trend_filter(ticker):
+    """
+    Institutional Trend Filter: Simple Moving Average 200 (Daily).
+    Returns 'BULLISH' if price > SMA200, 'BEARISH' if price < SMA200.
+    """
+    rates = mt5.copy_rates_from_pos(ticker, mt5.TIMEFRAME_D1, 0, 200)
+    if rates is None or len(rates) < 200:
+        return "NEUTRAL"
+    
+    sma200 = sum(r['close'] for r in rates) / 200
+    current_price = rates[-1]['close']
+    
+    return "BULLISH" if current_price > sma200 else "BEARISH"
 
 def _loop_principale(mode, callbacks, param_iniziali):
     global stato_motore, parametri_attivi
@@ -426,17 +425,19 @@ def _loop_principale(mode, callbacks, param_iniziali):
                 if time.time() - last_autopilot_scan > 3600:
                     last_autopilot_scan = time.time()
                     
-                    # Determine active region based on UTC clock
+                    # Determine active region and high-conviction global tickers
                     utc_h = datetime.datetime.utcnow().hour
                     if 14 <= utc_h < 21:
                         region, market_label = "US", "🇺🇸 Wall Street (US)"
-                        fallback = ["NVDA", "TSLA", "PLTR", "MSTR", "AAPL"]
+                        fallback = ["NVDA", "TSLA", "PLTR", "MSTR", "AAPL", "AMD", "MSFT", "META", "AMZN"]
                     elif 8 <= utc_h < 14:
                         region, market_label = "GB", "🇪🇺 Europe (UK/DE/FR)"
-                        fallback = ["SAP.DE", "ASML.AS", "LVMH.PA", "HSBA.L", "RACE.MI"] 
+                        # German (SAP), Dutch (ASML), French (LVMH), Italian (RACE), UK (HSBC)
+                        fallback = ["SAP.DE", "ASML.AS", "LVMH.PA", "HSBA.L", "RACE.MI", "SIE.DE", "MC.PA", "AIR.PA"] 
                     else:
                         region, market_label = "HK", "🌏 Asia (HK/JP)"
-                        fallback = ["9988.HK", "0700.HK", "SONY.T", "7203.T", "BABA"] 
+                        # Alibaba, Tencent, Meituan, JD, Sony, Toyota
+                        fallback = ["9988.HK", "0700.HK", "3690.HK", "9618.HK", "SONY.T", "7203.T", "9432.T", "BABA"] 
 
                     custom_log(f"⚙️ AUTOPILOT (Follow The Sun): Target ➔ {market_label}")
                     
@@ -566,25 +567,32 @@ def _loop_principale(mode, callbacks, param_iniziali):
                             budget_da_usare = min(budget_base * 1.2, budget_totale_max - budget_usato_tot)
 
                         if budget_da_usare >= 1.0:
-                            # V11: Extract Sentiment, Score, and Message
                             sentiment, ai_score, msg_ai = analizza_sentiment_ollama(ticker)
                             
                             azione = None
-                            
-                            # 🧠 SELECTIVE ENTRY THRESHOLD
-                            # We ignore weak noise (Scores 1, 2, 3). 
-                            # A minimum score of 4 is required to open ANY position.
                             min_threshold = 4
                             
-                            if sentiment == "POSITIVO" and ai_score >= min_threshold: 
-                                azione = "BUY"  
-                            elif sentiment == "NEGATIVO" and ai_score <= -min_threshold: 
-                                azione = "SELL" 
+                            # 🛡️ TREND GUARD FILTER: Protect against signals counter to the 200-day trend
+                            trend_stato = get_trend_filter(ticker)
+                            
+                            if sentiment == "POSITIVO" and ai_score >= min_threshold:
+                                if trend_stato == "BEARISH":
+                                    custom_log(f"⚠️ TREND GUARD: Skipping BUY on {ticker} (Price below SMA200)")
+                                else:
+                                    azione = "BUY"  
+                            elif sentiment == "NEGATIVO" and ai_score <= -min_threshold:
+                                if trend_stato == "BULLISH":
+                                    custom_log(f"⚠️ TREND GUARD: Skipping SELL on {ticker} (Price above SMA200)")
+                                else:
+                                    azione = "SELL" 
                             else:
                                 # Log skipped weak signals during Phase 1 for transparency
                                 if trigger_massivo:
                                     custom_log(f"🧠 AI Scan | {ticker}: Score {ai_score}/10. Too weak (needs {min_threshold}), skipped.")
-                                success, lotti, p_eseguito = esegui_trade_silenzioso(azione, ticker, budget_da_usare, orizzonte)
+                            
+                            if azione:
+                                # We now pass the 'msg_ai' to be saved in the MT5 comment field
+                                success, lotti, p_eseguito = esegui_trade_silenzioso(azione, ticker, budget_da_usare, orizzonte, commento_ai=msg_ai)
                                 if success:
                                     radar_ticks = 0 
                                     icona = "🛡️" if orizzonte == "LONG_TERM" else "⚡"
