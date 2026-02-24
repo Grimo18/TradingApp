@@ -1,11 +1,13 @@
-"""Modulo AI V9.5 - Integrazione Statistica Stagionale (Live Heatmap) & Sentiment."""
+"""Modulo AI V11.0 - JSON Scoring (-10/+10) & Macro-Regime Globale (RSS)."""
 
 import yfinance as yf
 from groq import Groq
 from newsapi import NewsApiClient
+import feedparser
 import time
 import datetime
 import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,38 +16,59 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
 
 cache_analisi = {}
-cache_stagionalita = {} # Memoria per le statistiche (Heatmap)
+cache_stagionalita = {}
+cache_macro = {"testo": "", "scadenza": 0}
 DURATA_CACHE = 600 # 10 minuti per le notizie
+
+def ottieni_macro_globale():
+    """Legge i feed RSS mondiali per capire se c'è guerra, crisi o pace."""
+    global cache_macro
+    if time.time() < cache_macro["scadenza"]:
+        return cache_macro["testo"]
+        
+    url_feed = [
+        "http://feeds.bbci.co.uk/news/world/rss.xml",
+        "http://feeds.bbci.co.uk/news/business/rss.xml"
+    ]
+    
+    macro_news = "GLOBAL MACRO CONTEXT (RSS Feeds):\n"
+    try:
+        for url in url_feed:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:4]: # Prende le prime 4 notizie per feed
+                macro_news += f"- {entry.title}\n"
+        
+        cache_macro["testo"] = macro_news
+        cache_macro["scadenza"] = time.time() + 1800 # Aggiorna la macro ogni 30 min
+        return macro_news
+    except Exception:
+        return "GLOBAL MACRO CONTEXT: Unavailable. Assume normal market conditions."
 
 def ottieni_bias_stagionale(ticker_pulito):
     """Calcola la media statistica degli ultimi 5 anni per il mese corrente."""
     mese_corrente = datetime.datetime.now().month
     nome_mese = datetime.datetime.now().strftime("%B")
     
-    # Se abbiamo già calcolato la statistica per questo asset oggi, usiamo la cache
     if ticker_pulito in cache_stagionalita:
         return cache_stagionalita[ticker_pulito]
         
     try:
         stock = yf.Ticker(ticker_pulito)
-        # Scarica i dati storici degli ultimi 5 anni, raggruppati per mese
         hist = stock.history(period="5y", interval="1mo")
         if not hist.empty and len(hist) > 1:
-            # Calcola il rendimento percentuale di ogni mese
             hist['Rendimento'] = hist['Close'].pct_change() * 100
-            # Filtra solo i mesi uguali a quello in cui ci troviamo ora
             rendimenti_mese = hist[hist.index.month == mese_corrente]['Rendimento'].dropna()
             
             if not rendimenti_mese.empty:
                 media_storica = rendimenti_mese.mean()
                 trend = "BULLISH 📈" if media_storica > 0 else "BEARISH 📉"
-                testo_bias = f"STATISTICAL SEASONALITY: In the last 5 years, {ticker_pulito} has an average return of {media_storica:.2f}% during the month of {nome_mese} ({trend})."
+                testo_bias = f"STATISTICAL SEASONALITY: In the last 5 years, {ticker_pulito} averages {media_storica:.2f}% in {nome_mese} ({trend})."
                 cache_stagionalita[ticker_pulito] = testo_bias
                 return testo_bias
     except Exception:
         pass
         
-    cache_stagionalita[ticker_pulito] = "STATISTICAL SEASONALITY: No reliable 5-year data available for this month."
+    cache_stagionalita[ticker_pulito] = "STATISTICAL SEASONALITY: No reliable 5-year data available."
     return cache_stagionalita[ticker_pulito]
 
 def ottieni_notizie_top(ticker):
@@ -58,22 +81,18 @@ def ottieni_notizie_top(ticker):
     txt = f"LATEST FINANCIAL NEWS FOR {ticker_pulito}:\n"
     
     try:
-        # FONTE 1: YAHOO FINANCE NEWS
         stock = yf.Ticker(ticker_pulito)
         yahoo_news = stock.news
         if yahoo_news:
-            txt += "--- YAHOO FINANCE ---\n"
             for art in yahoo_news[:3]: 
                 txt += f"- {art.get('title', '')}\n"
         
-        # FONTE 2: NEWS API
         nome = stock.info.get('longName', ticker_pulito)
         newsapi = NewsApiClient(api_key=NEWS_API_KEY)
         query = f"{nome} OR {ticker_pulito}"
-        top = newsapi.get_everything(q=query, language='en', sort_by='relevancy', page_size=5)
+        top = newsapi.get_everything(q=query, language='en', sort_by='relevancy', page_size=4)
         
         if top['totalResults'] > 0:
-            txt += "--- GLOBAL WEB ---\n"
             for art in top['articles']: 
                 desc = str(art.get('description', ''))[:80]
                 txt += f"- {art['title']} | {desc}...\n"
@@ -87,23 +106,34 @@ def analizza_sentiment_ollama(ticker):
     ora_attuale = time.time()
 
     if ticker in cache_analisi:
-        sentiment, msg, scadenza = cache_analisi[ticker]
-        if ora_attuale < scadenza:
-            return sentiment, f"{msg} (⚡ CACHE)"
+        data = cache_analisi[ticker]
+        if ora_attuale < data["scadenza"]:
+            return data["sentiment"], data["score"], f"{data['msg']} (⚡ CACHE)"
 
-    notizie, ticker_pulito = ottieni_notizie_top(ticker)
-    
-    # 💡 NOVITÀ: Estraiamo la statistica e la fondiamo con le notizie!
+    macro_contesto = ottieni_macro_globale()
+    notizie_specifiche, ticker_pulito = ottieni_notizie_top(ticker)
     bias_statistico = ottieni_bias_stagionale(ticker_pulito)
     
     prompt = f"""
-    Analyze the financial asset {ticker}. 
-    1. {bias_statistico}
-    2. {notizie}
+    You are an elite quantitative trading AI. Analyze {ticker} using the following data:
     
-    Based on BOTH the historical seasonality and current news, determine the direction.
-    Reply STRICTLY with ONE word: POSITIVO, NEGATIVO or NEUTRO. 
-    Then add 20 words max justification explaining if you relied more on news or on historical stats.
+    1. {macro_contesto}
+    2. {bias_statistico}
+    3. {notizie_specifiche}
+    
+    STRICT RULES:
+    - DISCARD irrelevant local news or generic crime.
+    - HIGH PRIORITY: Wars, geopolitical tension, terrorist attacks, Central Bank rates, major CEO statements.
+    - If there is a major global crisis (e.g. war), IGNORE seasonality. Crisis overrides history.
+    - If global context is calm, use seasonality and specific news.
+    
+    Provide your output STRICTLY in valid JSON format with no markdown formatting and no extra text:
+    {{
+        "trend": "POSITIVO" or "NEGATIVO" or "NEUTRO",
+        "score": <integer from -10 to 10. -10 is max crash, +10 is max pump. 0 is flat>,
+        "macro_context": "<brief 10-word summary of the world situation>",
+        "reason": "<brief 15-word reason for the score>"
+    }}
     """
 
     try:
@@ -111,22 +141,26 @@ def analizza_sentiment_ollama(ticker):
         res = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.3-70b-versatile",
-            temperature=0.1
-        ).choices[0].message.content.strip().split('\n')
+            temperature=0.1,
+            response_format={"type": "json_object"}
+        ).choices[0].message.content.strip()
         
-        testo_grezzo = res[0].strip().upper()
+        dati_json = json.loads(res)
         
-        if "POSITIVO" in testo_grezzo: sentiment = "POSITIVO"
-        elif "NEGATIVO" in testo_grezzo: sentiment = "NEGATIVO"
-        else: sentiment = "NEUTRO"
+        sentiment = dati_json.get("trend", "NEUTRO").upper()
+        score = int(dati_json.get("score", 0))
+        motivo = dati_json.get("reason", "")
         
-        motivazione = res[1] if len(res) > 1 else testo_grezzo
-        messaggio = f"🤖 AI: {sentiment} | {motivazione}"
+        messaggio = f"🤖 Score: {score}/10 | {motivo}"
         
-        cache_analisi[ticker] = (sentiment, messaggio, ora_attuale + DURATA_CACHE)
-        return sentiment, messaggio
+        cache_analisi[ticker] = {
+            "sentiment": sentiment, 
+            "score": score, 
+            "msg": messaggio, 
+            "scadenza": ora_attuale + DURATA_CACHE
+        }
+        return sentiment, score, messaggio
         
     except Exception as e:
-        messaggio_errore = f"⚠️ ERRORE AI ({ticker}): {str(e)}"
-        cache_analisi[ticker] = ("NEUTRO", messaggio_errore, ora_attuale + 60)
-        return "NEUTRO", messaggio_errore
+        messaggio_errore = f"⚠️ ERRORE AI ({ticker}): JSON Parse Failed"
+        return "NEUTRO", 0, messaggio_errore

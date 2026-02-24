@@ -131,6 +131,8 @@ def _loop_principale(mode, callbacks, param_iniziali):
     
     primo_giro_completato = False # 🚀 FLAG PER LA COSTRUZIONE MASSIVA
 
+    giorno_corrente = datetime.datetime.now().day # 🕒 Tiene traccia del giorno attuale
+
     while stato_motore != "SPENTO":
         acc_live = mt5.account_info()
         if acc_live and callbacks.get("portfolio"):
@@ -157,11 +159,18 @@ def _loop_principale(mode, callbacks, param_iniziali):
             tickers_da_scansionare = [t.strip() for t in stringa_tickers.split(",") if t.strip()]
             venerdi_sera = is_venerdi_chiusura()
 
-            # 🛑 KILL SWITCH
-            if profitto_giornaliero >= target_profit or profitto_giornaliero <= -max_loss:
-                motivo = "🏆 TARGET RAGGIUNTO" if profitto_giornaliero >= target_profit else "🛑 MAX DRAWDOWN"
-                msg = f"{motivo} ({profitto_giornaliero:.2f}$). Chiudo speculazioni, salvo Cassetto."
-                custom_log(msg); invia_telegram(tg_chat, msg)
+            # 🔄 AZZERAMENTO DI MEZZANOTTE
+            oggi = datetime.datetime.now().day
+            if oggi != giorno_corrente:
+                profitto_giornaliero = 0.0
+                giorno_corrente = oggi
+                custom_log("🌒 Nuovo Giorno: Contatore profitti e drawdown azzerato. Si riparte!")
+
+            # 🛑 KILL SWITCH (Solo per le perdite! I profitti corrono liberi)
+            if profitto_giornaliero <= -max_loss:
+                msg = f"🛑 MAX DRAWDOWN RAGGIUNTO ({profitto_giornaliero:.2f}$). Chiudo speculazioni, salvo Cassetto."
+                custom_log(msg)
+                invia_telegram(tg_chat, msg)
                 stato_motore = "CHIUSURA_FORZATA"
                 continue
 
@@ -216,12 +225,20 @@ def _loop_principale(mode, callbacks, param_iniziali):
                         budget_da_usare = min(budget_base * 1.5, budget_totale_max - budget_usato_tot)
 
                         if budget_da_usare >= 1.0:
-                            sentiment, msg_ai = analizza_sentiment_ollama(ticker)
+                            # V11: Estrazione di Sentiment, Score e Messaggio
+                            sentiment, ai_score, msg_ai = analizza_sentiment_ollama(ticker)
                             
                             azione = None
-                            # Vogliamo solo asset in cui l'AI ha confermato un trend (Non Neutro)
-                            if sentiment == "POSITIVO": azione = "BUY"  
-                            elif sentiment == "NEGATIVO": azione = "SELL" 
+                            # 🛡️ SOGLIA DI INGRESSO: 5 su 10. Scarta il rumore di mercato debole.
+                            soglia_ingresso = 5 
+                            
+                            if sentiment == "POSITIVO" and ai_score >= soglia_ingresso: 
+                                azione = "BUY"  
+                            elif sentiment == "NEGATIVO" and ai_score <= -soglia_ingresso: 
+                                azione = "SELL" 
+                            elif trigger_massivo:
+                                # Se siamo in kickstart ma l'AI dà un punteggio debole (es. 2 o -3), stiamo fermi
+                                pass
                             
                             if azione:
                                 success, lotti, p_eseguito = esegui_trade_silenzioso(azione, ticker, budget_da_usare, orizzonte)

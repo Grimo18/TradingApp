@@ -81,11 +81,6 @@ class TradingApp:
         self.entry_capitale.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 10))
         self.entry_capitale.insert(0, "100.00")
 
-        ctk.CTkLabel(card_risk, text="Target Profit Giornaliero ($)", font=self.label_font, text_color=C_SUB).grid(row=3, column=0, sticky="w", padx=15)
-        self.entry_target = ctk.CTkEntry(card_risk, fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT, height=35)
-        self.entry_target.grid(row=4, column=0, sticky="ew", padx=15, pady=(0, 10))
-        self.entry_target.insert(0, "50.00")
-
         ctk.CTkLabel(card_risk, text="Max Daily Drawdown ($)", font=self.label_font, text_color=C_SUB).grid(row=5, column=0, sticky="w", padx=15)
         self.entry_loss = ctk.CTkEntry(card_risk, fg_color=C_BG, border_color=C_BORDER, text_color=C_TEXT, height=35)
         self.entry_loss.grid(row=6, column=0, sticky="ew", padx=15, pady=(0, 15))
