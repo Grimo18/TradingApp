@@ -6,6 +6,12 @@ __pycache__/
 cache/
 logs/
 
+# CSV operational data files
+*.csv
+portafoglio_aperto_live.csv
+storico_operazioni_chiuse.csv
+live_trades_log.csv
+
 # Environment variables
 .env
 .env.local
