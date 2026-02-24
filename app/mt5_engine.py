@@ -409,14 +409,34 @@ def _loop_principale(mode, callbacks, param_iniziali):
             tickers_da_scansionare = [t.strip() for t in stringa_tickers.split(",") if t.strip()]
 
             # ==========================================
-            # 🧠 AUTOPILOT VIRAL: SENTIMENT DISCOVERY
+            # 🧠 AUTOPILOT: "FOLLOW THE SUN" GLOBAL DISCOVERY
             # ==========================================
             if "AUTOPILOT" in tickers_da_scansionare:
                 if not autopilot_tickers:
-                    custom_log("⚙️ AUTOPILOT: Fetching trending stocks and viral assets globally...")
+                    # 🕒 Time-Zone Logic (UTC Time) to determine open markets
+                    ora_utc = datetime.datetime.utcnow().hour
+                    
+                    if 14 <= ora_utc < 21:
+                        region_code = "US"
+                        mercato_nome = "🇺🇸 Wall Street (US)"
+                        fallback_pool = ["NVDA", "TSLA", "PLTR", "MSTR", "AAPL"]
+                    elif 8 <= ora_utc < 14:
+                        region_code = "GB"
+                        mercato_nome = "🇪🇺 European Markets (UK/DE/FR)"
+                        # German, Dutch, French, and UK giants
+                        fallback_pool = ["SAP.DE", "ASML.AS", "LVMH.PA", "HSBA.L", "RACE.MI"] 
+                    else:
+                        region_code = "HK"
+                        mercato_nome = "🌏 Asian Markets (HK/JP)"
+                        # Alibaba, Tencent, Sony, Toyota, etc.
+                        fallback_pool = ["9988.HK", "0700.HK", "SONY.T", "7203.T", "BABA"] 
+
+                    custom_log(f"⚙️ AUTOPILOT (Follow The Sun): Target ➔ {mercato_nome}")
+                    
                     trending_oggi = []
                     try:
-                        url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
+                        # Fetches top searched stocks dynamically based on the active global region
+                        url = f"https://query1.finance.yahoo.com/v1/finance/trending/{region_code}"
                         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
                         if res.status_code == 200:
                             dati = res.json()
@@ -424,36 +444,50 @@ def _loop_principale(mode, callbacks, param_iniziali):
                     except Exception:
                         pass
 
-                    pool_candidati = list(set(trending_oggi + ["NVDA", "TSLA", "PLTR", "MSTR", "BTC-USD"]))
+                    # Merge regional viral stocks with strong global fallbacks
+                    pool_candidati = list(set(trending_oggi + fallback_pool))
                     trend_positivi = []
                     
                     for tk in pool_candidati:
+                        tk_base = tk.split('.')[0] # Strip Yahoo specific suffixes to test pure symbols
                         tk_mt5 = tk
+                        
+                        # 🔄 Smart Broker Name Resolution
+                        # Tries to find the exact suffix your specific MT5 broker uses for global stocks
                         if not mt5.symbol_info(tk_mt5):
-                            if mt5.symbol_info(f"{tk}.OQ"): tk_mt5 = f"{tk}.OQ"
-                            elif mt5.symbol_info(f"{tk}=X"): tk_mt5 = f"{tk}=X"
-                            elif mt5.symbol_info(f"{tk}USD"): tk_mt5 = f"{tk}USD"
+                            possibili_nomi = [
+                                tk, tk_base, f"{tk_base}.OQ", f"{tk_base}.DE", 
+                                f"{tk_base}.L", f"{tk_base}.MI", f"{tk_base}.HK", 
+                                f"{tk_base}USD", f"{tk_base}=X"
+                            ]
+                            for p in possibili_nomi:
+                                if mt5.symbol_info(p):
+                                    tk_mt5 = p
+                                    break
 
-                        if mt5.symbol_info(tk_mt5):
+                        # Verifies momentum on MetaTrader (must be open and trending)
+                        if mt5.symbol_info(tk_mt5) and is_mercato_aperto(tk_mt5):
                             mt5.symbol_select(tk_mt5, True)
                             rates = mt5.copy_rates_from_pos(tk_mt5, mt5.TIMEFRAME_D1, 0, 5)
                             if rates is not None and len(rates) > 1:
                                 p_oggi = rates[-1]['close']
                                 p_storico = rates[0]['open']
-                                if p_oggi > 10: 
+                                if p_oggi > 2: # Ignore extreme penny stocks
                                     perf = ((p_oggi - p_storico) / p_storico) * 100
-                                    if perf > 1.5: 
+                                    if perf > 1.0: # Must have positive recent momentum
                                         trend_positivi.append((tk_mt5, perf))
 
+                    # Sort by highest momentum
                     trend_positivi.sort(key=lambda x: x[1], reverse=True)
-                    autopilot_tickers = [x[0] for x in trend_positivi[:10]]
+                    autopilot_tickers = [x[0] for x in trend_positivi[:10]] # Keep top 10
 
                     if not autopilot_tickers:
-                        custom_log("⚠️ AUTOPILOT: No significant viral trend detected right now.")
+                        custom_log(f"⚠️ AUTOPILOT: No strong momentum detected in {mercato_nome} right now.")
                     else:
                         azioni_str = ", ".join(autopilot_tickers)
-                        custom_log(f"🎯 AUTOPILOT: Found {len(autopilot_tickers)} VIRAL stocks! Adding to portfolio...")
+                        custom_log(f"🎯 AUTOPILOT: Added {len(autopilot_tickers)} trending assets from {mercato_nome}!")
 
+                # Merge discovered dynamic assets into the scanning pool
                 tickers_da_scansionare.remove("AUTOPILOT")
                 tickers_da_scansionare = list(set(tickers_da_scansionare + autopilot_tickers))
             # ==========================================
@@ -643,8 +677,14 @@ def _loop_principale(mode, callbacks, param_iniziali):
             if time.time() - ultimo_heartbeat > 30:
                 radar_ticks += 1
                 budget_attivo = sum(d["impegnato"] for d in memoria_asset.values())
-                custom_log(f"👀 Radar active: {len(tickers_da_scansionare)} assets | Today's profit: {profitto_giornaliero:.2f}$ | Deployment: {budget_attivo:.2f}$/{budget_totale_max:.2f}$ (Update {radar_ticks}x)", replace=(radar_ticks > 1))
                 
+                # 🌍 Determine active session for the UI heartbeat
+                ora_utc_radar = datetime.datetime.utcnow().hour
+                if 14 <= ora_utc_radar < 21: sessione_ui = "🇺🇸 US"
+                elif 8 <= ora_utc_radar < 14: sessione_ui = "🇪🇺 EU"
+                else: sessione_ui = "🌏 ASIA"
+                custom_log(f"👀 Radar [{sessione_ui}]: {len(tickers_da_scansionare)} assets | Today's profit: {profitto_giornaliero:.2f}$ | Deployment: {budget_attivo:.2f}$/{budget_totale_max:.2f}$ (Update {radar_ticks}x)", replace=(radar_ticks > 1))
+
                 tutte_le_posizioni = mt5.positions_get()
                 if tutte_le_posizioni: aggiorna_csv_portafoglio_aperto(tutte_le_posizioni)
                 

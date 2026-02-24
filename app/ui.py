@@ -39,14 +39,12 @@ class TradingApp:
         self.app.minsize(1100, 700)
         self.app.configure(fg_color=C_BG)
         
+        # Defines the pre-set institutional asset baskets, names may vary from broker to broker 
         self.watchlist_map = {
-            "👑 OMNIVERSO: Titan 45 + Defense + Viral Trend": "AUTOPILOT, EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, AAPL.OQ, MSFT.OQ, NVDA.OQ, TSLA.OQ, AMZN.OQ, META.OQ, GOOGL.OQ, NFLX.OQ, AMD.OQ, INTC.OQ, QCOM.OQ, CSCO.OQ, PEP.OQ, COST.OQ, SBUX.OQ, PYPL.OQ, MU.OQ, TXN.OQ, INTU.OQ, AMAT.OQ, CMCSA.OQ, GILD.OQ, MDLZ.OQ, PLTR.OQ, LMT, RTX, GD, NOC, WDC.OQ, SMCI.OQ, CRWD.OQ, PANW.OQ, NOW.OQ, UBER.OQ, ABNB.OQ, COIN.OQ, MSTR.OQ, HOOD.OQ",
-            "🚀 AUTOPILOT PURO: Solo Notizie Virali": "AUTOPILOT",
-            "⚔️ Pacchetto Difesa & Quant Tech": "PLTR.OQ, LMT, RTX, GD, NOC, MU.OQ, WDC.OQ",
-            "🛡️ Institutional Mega-Mix (30 Assets)": "EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, BTCUSD, ETHUSD, AAPL.OQ, MSFT.OQ, NVDA.OQ, TSLA.OQ, AMZN.OQ, META.OQ, GOOGL.OQ, NFLX.OQ, AMD.OQ, INTC.OQ, QCOM.OQ, CSCO.OQ, PEP.OQ, COST.OQ, SBUX.OQ, PYPL.OQ, MU.OQ, TXN.OQ, INTU.OQ, AMAT.OQ, CMCSA.OQ, GILD.OQ, MDLZ.OQ",
-            "🦅 Top 5 Big Tech USA": "NVDA.OQ, TSLA.OQ, AAPL.OQ, MSFT.OQ, META.OQ, AMZN.OQ",
-            "💱 Top 5 Forex Majors": "EURUSD, GBPUSD, USDJPY, USDCAD, AUDUSD",
-            "🪙 Top Crypto Asset": "BTCUSD, ETHUSD"
+            "👑 TITAN (Follow The Sun + Autopilot)": "AUTOPILOT, EURUSD, GBPUSD, USDJPY, BTCUSD, ETHUSD",
+            "💱 Forex Majors": "EURUSD, GBPUSD, USDJPY, USDCAD, AUDUSD",
+            "🪙 Crypto Assets": "BTCUSD, ETHUSD",
+            "🦅 Top 15 US Stocks (Tech & Defense)": "AAPL.OQ, MSFT.OQ, NVDA.OQ, TSLA.OQ, AMZN.OQ, META.OQ, GOOGL.OQ, JNJ.OQ, PG.OQ, KO.OQ, PEP.OQ, WMT.OQ, MCD.OQ, LMT.OQ, V.OQ"
         }
 
         self._setup_fonts()
