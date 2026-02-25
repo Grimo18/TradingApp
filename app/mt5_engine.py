@@ -363,6 +363,9 @@ def _loop_principale(mode, callbacks, param_iniziali):
 
     giorno_corrente = datetime.datetime.now().day # 🕒 Tiene traccia del giorno attuale
 
+    ultimo_mercato_autopilot = ""
+    ultimo_stato_radar = ""
+
     while stato_motore != "SPENTO":
         
         # 📱 Listen for incoming remote commands via Telegram
@@ -485,7 +488,9 @@ def _loop_principale(mode, callbacks, param_iniziali):
                         # Alibaba, Tencent, Meituan, JD, Sony, Toyota
                         fallback = ["9988.HK", "0700.HK", "3690.HK", "9618.HK", "SONY.T", "7203.T", "9432.T", "BABA"] 
 
-                    custom_log(f"⚙️ AUTOPILOT (Follow The Sun): Target ➔ {market_label}")
+                    if market_label != ultimo_mercato_autopilot:
+                        custom_log(f"⚙️ AUTOPILOT (Follow The Sun): Target ➔ {market_label}")
+                        ultimo_mercato_autopilot = market_label
                     
                     trending_pool = []
                     try:
@@ -520,7 +525,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
                             rates = mt5.copy_rates_from_pos(mt5_tk, mt5.TIMEFRAME_D1, 0, 5)
                             if rates is not None and len(rates) > 1:
                                 p_now, p_start = rates[-1]['close'], rates[0]['open']
-                                if p_now > 2: # Filter out low-liquidity penny stocks
+                                if p_now > 2 and p_start > 0: # Filter out low-liquidity penny stocks
                                     perf = ((p_now - p_start) / p_start) * 100
                                     if perf > 1.0: # Minimum momentum threshold
                                         valid_trends.append((mt5_tk, perf))
@@ -741,15 +746,21 @@ def _loop_principale(mode, callbacks, param_iniziali):
                 custom_log("✅ PHASE 1 Complete. Portfolio Built. Moving to standard Radar.")
 
             if time.time() - ultimo_heartbeat > 30:
-                radar_ticks += 1
                 budget_attivo = sum(d["impegnato"] for d in memoria_asset.values())
                 
-                # 🌍 Determine active session for the UI heartbeat
+                # 🌍 Determine active session
                 ora_utc_radar = datetime.datetime.utcnow().hour
                 if 14 <= ora_utc_radar < 21: sessione_ui = "🇺🇸 US"
                 elif 8 <= ora_utc_radar < 14: sessione_ui = "🇪🇺 EU"
                 else: sessione_ui = "🌏 ASIA"
-                custom_log(f"👀 Radar [{sessione_ui}]: {len(tickers_da_scansionare)} assets | Today's profit: {profitto_giornaliero:.2f}$ | Deployment: {budget_attivo:.2f}$/{budget_totale_max:.2f}$ (Update {radar_ticks}x)", replace=(radar_ticks > 1))
+                
+                # Create a "snapshot" of the current state
+                stato_attuale = f"{sessione_ui}_{len(tickers_da_scansionare)}_{profitto_giornaliero}_{budget_attivo}"
+                
+                # Print the Radar ONLY if there has been a real change
+                if stato_attuale != ultimo_stato_radar:
+                    custom_log(f"👀 Radar [{sessione_ui}]: {len(tickers_da_scansionare)} assets | Today's profit: {profitto_giornaliero:.2f}$ | Deployment: {budget_attivo:.2f}$/{budget_totale_max:.2f}$")
+                    ultimo_stato_radar = stato_attuale
 
                 tutte_le_posizioni = mt5.positions_get()
                 if tutte_le_posizioni: aggiorna_csv_portafoglio_aperto(tutte_le_posizioni)
