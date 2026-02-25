@@ -78,6 +78,28 @@ def render_live_metrics():
 render_live_metrics()
 st.divider()
 
+@st.fragment(run_every=5)
+def render_daily_performance():
+    try:
+        if os.path.exists("storico_operazioni_chiuse.csv"):
+            df_storico = pd.read_csv("storico_operazioni_chiuse.csv")
+            # Filtra solo le operazioni di oggi
+            oggi = datetime.datetime.now().strftime("%Y-%m-%d")
+            df_oggi = df_storico[df_storico['Close Date'] == oggi]
+            
+            profitto_oggi = df_oggi['Net P/L ($)'].astype(float).sum()
+            win_rate = (len(df_oggi[df_oggi['Net P/L ($)'].astype(float) > 0]) / len(df_oggi) * 100) if len(df_oggi) > 0 else 0
+            
+            st.write("### 🏆 Daily Realized Performance")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Today's Closed P&L", f"${profitto_oggi:,.2f}")
+            col2.metric("Trades Closed Today", len(df_oggi))
+            col3.metric("Win Rate", f"{win_rate:.1f}%")
+            st.divider()
+    except Exception as e:
+        pass
+
+render_daily_performance()
 # ==========================================
 # 📊 LIVE FRAGMENT 2: HEAVY CHARTS (Every 60s)
 # ==========================================
@@ -102,9 +124,11 @@ def render_live_charts():
             st.plotly_chart(fig_pie, use_container_width=True, theme="streamlit")
 
         with chart_col2:
-            # CHART 2: Live Candlestick Chart
-            top_symbol = df.iloc[0]['symbol']
-            rates = mt5.copy_rates_from_pos(top_symbol, mt5.TIMEFRAME_D1, 0, 50)
+            # Drop-down menu to choose which graph to view
+            lista_simboli = df['symbol'].unique().tolist()
+            simbolo_scelto = st.selectbox("Seleziona Asset da visualizzare", lista_simboli, key="grafico_selettore")
+            
+            rates = mt5.copy_rates_from_pos(simbolo_scelto, mt5.TIMEFRAME_H1, 0, 100) # Better H1 for live
             
             if rates is not None and len(rates) > 0:
                 df_rates = pd.DataFrame(rates)
@@ -112,16 +136,16 @@ def render_live_charts():
                 
                 fig_candle = go.Figure(data=[go.Candlestick(
                     x=df_rates['time'], open=df_rates['open'], high=df_rates['high'],
-                    low=df_rates['low'], close=df_rates['close'], name=top_symbol,
+                    low=df_rates['low'], close=df_rates['close'], name=simbolo_scelto,
                     increasing_line_color='#22c55e', decreasing_line_color='#ef4444'
                 )])
                 
                 fig_candle.update_layout(
-                    title=f"Market Trend: {top_symbol} (Daily)", xaxis_rangeslider_visible=False, 
-                    dragmode=False, hovermode="x unified"
+                    title=f"Market Trend: {simbolo_scelto} (H1)", xaxis_rangeslider_visible=False, 
+                    dragmode=False, hovermode="x unified", margin=dict(l=0, r=0, t=40, b=0)
                 )
                 
-                st.plotly_chart(fig_candle, use_container_width=True, theme="streamlit", config={'scrollZoom': False, 'displayModeBar': 'hover'})
+                st.plotly_chart(fig_candle, use_container_width=True, theme="streamlit")
 
 # Render the charts block
 render_live_charts()
@@ -134,14 +158,23 @@ st.divider()
 def render_live_table():
     live_pos = mt5.positions_get()
     if live_pos:
-        st.subheader("📋 Open Positions Details (Live Stream)")
+        st.subheader("📋 Open Positions Details")
         df_live = pd.DataFrame(list(live_pos), columns=live_pos[0]._asdict().keys())
         df_live = df_live[['ticket', 'symbol', 'type', 'volume', 'price_open', 'price_current', 'profit', 'comment']].copy()
+        
+        # Mappatura e formattazione
         df_live['type'] = df_live['type'].map({0: 'BUY 🟢', 1: 'SELL 🔴'})
-        df_live['profit'] = df_live['profit'].apply(lambda x: f"${x:.2f}")
         df_live.rename(columns={'comment': '🤖 AI Insights'}, inplace=True)
         
-        st.dataframe(df_live, use_container_width=True, hide_index=True)
+        # Funzione per colorare la colonna profitto
+        def color_profit(val):
+            color = '#22c55e' if val > 0 else '#ef4444' if val < 0 else 'white'
+            return f'color: {color}; font-weight: bold'
+            
+        # Applichiamo lo stile prima di renderizzare
+        styled_df = df_live.style.map(color_profit, subset=['profit']).format({'profit': "${:.2f}"})
+        
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
         
 # Render the table block
 render_live_table()

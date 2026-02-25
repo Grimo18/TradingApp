@@ -17,6 +17,9 @@ live_trades_log.csv
 .env.local
 .env.*.local
 
+# Sensitive configuration
+config.json
+
 # OS files
 .DS_Store
 Thumbs.db

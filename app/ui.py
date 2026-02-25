@@ -249,7 +249,16 @@ class TradingApp:
     def _on_start(self):
         if self.seg_mode.get() == "[ Backtest ]": return
         self._log_to_terminal("Market scan started... Scanning for signals.")
-        aggiorna_parametri_e_avvia(self._get_params())
+        
+        params = self._get_params()
+        try:
+            with open("config.json", "w") as f:
+                import json
+                json.dump(params, f)
+        except Exception as e:
+            self._log_to_terminal(f"Warning: Failed to save config.json - {e}")
+            
+        aggiorna_parametri_e_avvia(params)
 
     def _on_stop(self):
         self._log_to_terminal("System commanded to halt. Returning to standby.")

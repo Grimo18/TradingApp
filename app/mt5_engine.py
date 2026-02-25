@@ -76,7 +76,7 @@ def controlla_comandi_telegram(chat_ids_str):
     global ultimo_update_id_telegram, stato_motore
     if not TELEGRAM_BOT_TOKEN or not chat_ids_str: return
     
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={ultimo_update_id_telegram + 1}&timeout=1"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={ultimo_update_id_telegram + 1}"
     try:
         res = requests.get(url, timeout=2).json()
         if res.get("ok") and res.get("result"):
@@ -164,26 +164,62 @@ def aggiorna_csv_portafoglio_aperto(posizioni):
             
             writer.writerow([pos.symbol, data_acquisto.strftime("%Y-%m-%d %H:%M"), giorni_hold, tipo_trade, pos.volume, pos.price_open, f"{profitto_netto:.2f}", orizzonte])
 
+cache_categorie_asset = {}
+
 def classifica_asset(ticker):
     """
-    Classify asset into category and recommended holding horizon.
+    Dynamically classify asset category and recommended holding horizon.
     
-    Classification logic:
-    - Crypto (BTC, ETH): Long-term cassettista (high volatility, secular uptrend)
-    - Forex (6-letter codes): Short-term speculation (tight spreads, mean reversion)
-    - Equities: Long-term cassettista (company value fundamentals)
+    Uses MetaTrader 5 internal symbol paths to correctly identify the asset class
+    (Forex, Crypto, Metals, Equities) regardless of broker-specific suffixes.
+    Implements a memory cache to achieve O(1) performance during the main radar loop.
     
     Args:
-        ticker (str): Asset symbol.
+        ticker (str): Asset symbol (e.g., "EURUSD.pro", "AAPL", "XAUUSD").
     
     Returns:
         tuple: (category, holding_horizon)
-            - category: "CRYPTO", "FOREX", or "CASSETTISTA"
+            - category: "FOREX", "CRYPTO", "COMMODITY", or "CASSETTISTA"
             - holding_horizon: "LONG_TERM" or "SHORT_TERM"
     """
-    if "BTC" in ticker or "ETH" in ticker: return "CRYPTO", "LONG_TERM"
-    if len(ticker) == 6 and ticker.isalpha(): return "FOREX", "SHORT_TERM"
-    return "CASSETTISTA", "LONG_TERM"
+    global cache_categorie_asset
+    
+    # 1. Check cache first for maximum performance (O(1) lookup)
+    if ticker in cache_categorie_asset:
+        return cache_categorie_asset[ticker]
+        
+    # Default assumptions
+    categoria = "CASSETTISTA"
+    orizzonte = "LONG_TERM"
+    
+    # 2. Query MT5 for the broker's internal classification path
+    info = mt5.symbol_info(ticker)
+    
+    if info is not None:
+        percorso = info.path.upper()  # Example: "FOREX\MAJORS\EURUSD" or "METALS\XAUUSD"
+        
+        # Dynamically map the path to our engine's logic
+        if "FOREX" in percorso or "FX" in percorso or "CURRENC" in percorso:
+            categoria, orizzonte = "FOREX", "SHORT_TERM"
+        elif "CRYPTO" in percorso:
+            categoria, orizzonte = "CRYPTO", "LONG_TERM"
+        elif "METAL" in percorso or "COMMODIT" in percorso or "ENERGY" in percorso:
+            categoria, orizzonte = "COMMODITY", "SHORT_TERM"  # Gold, Silver, Oil are usually short-term spec
+        else:
+            categoria, orizzonte = "CASSETTISTA", "LONG_TERM"  # Equities, Indices, ETFs
+            
+    else:
+        # 3. Fallback heuristic if MT5 data is unavailable (failsafe)
+        t_clean = ticker.split('.')[0].split('_')[0] 
+        if "BTC" in t_clean or "ETH" in t_clean: 
+            categoria, orizzonte = "CRYPTO", "LONG_TERM"
+        elif len(t_clean) == 6 or any(f in t_clean for f in ["USD", "EUR", "GBP", "JPY", "CAD", "CHF", "AUD"]): 
+            categoria, orizzonte = "FOREX", "SHORT_TERM"
+
+    # 4. Save result to cache to bypass future MT5 queries for this ticker
+    cache_categorie_asset[ticker] = (categoria, orizzonte)
+    
+    return categoria, orizzonte
 
 def is_mercato_aperto(ticker):
     """
@@ -206,20 +242,29 @@ def is_mercato_aperto(ticker):
 
 def is_spread_accettabile(ticker):
     """
-    Verify broker spread is within acceptable limits.
+    Verify broker spread is within acceptable dynamic limits based on asset class.
     
-    Threshold: 0.2% of mid-price
-    Example: 1% price level with 0.2% spread = 0.002 max spread
+    Thresholds:
+    - FOREX: 0.03% of ask price (tight spreads required to protect short-term targets)
+    - CRYPTO/EQUITIES: 0.25% of ask price (higher volatility and spread tolerance)
     
     Args:
         ticker (str): Asset symbol.
     
     Returns:
-        bool: True if spread < 0.2%, False otherwise.
+        bool: True if the current spread is within the acceptable threshold, False otherwise.
     """
     tick = mt5.symbol_info_tick(ticker)
-    if not tick or tick.ask == 0: return False
-    return (((tick.ask - tick.bid) / tick.ask) * 100) < 0.2
+    if not tick or tick.ask == 0: 
+        return False
+        
+    spread_perc = (((tick.ask - tick.bid) / tick.ask) * 100)
+    
+    # Identify asset class to apply the correct institutional spread filter
+    categoria, _ = classifica_asset(ticker)
+    max_spread = 0.03 if categoria == "FOREX" else 0.25 
+    
+    return spread_perc < max_spread
 
 def is_venerdi_chiusura():
     """
@@ -276,22 +321,23 @@ def esegui_trade_silenzioso(azione, ticker, budget_usd, orizzonte_temporale, com
     if res.retcode != mt5.TRADE_RETCODE_DONE: return False, 0.0, 0.0
     return True, lotti, res.price
 
-def get_trend_filter(ticker):
-    """
-    Institutional Trend Filter: Simple Moving Average 200 (Daily).
-    Returns 'BULLISH' if price > SMA200, 'BEARISH' if price < SMA200.
-    """
-    rates = mt5.copy_rates_from_pos(ticker, mt5.TIMEFRAME_D1, 0, 200)
+def get_trend_filter(ticker, orizzonte):
+    # If it's fast trading (speculative Forex), use H4. If it's a cash draw, use D1.
+    timeframe = mt5.TIMEFRAME_H4 if orizzonte == "SHORT_TERM" else mt5.TIMEFRAME_D1
+    rates = mt5.copy_rates_from_pos(ticker, timeframe, 0, 200)
+
     if rates is None or len(rates) < 200:
         return "NEUTRAL"
-    
+
     sma200 = sum(r['close'] for r in rates) / 200
     current_price = rates[-1]['close']
-    
+
     return "BULLISH" if current_price > sma200 else "BEARISH"
 
 def _loop_principale(mode, callbacks, param_iniziali):
     global stato_motore, parametri_attivi
+
+    parametri_attivi = param_iniziali
     
     def custom_log(msg, replace=False):
         try: callbacks.get("log")(msg, replace_last=replace)
@@ -547,7 +593,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
                     dist_dal_min = ((prezzo - memoria_asset[ticker]["low"]) / memoria_asset[ticker]["low"]) * 100
                     
                     # If there is technical movement OR we are in Phase 1 (Portfolio Construction)
-                    trigger_tecnico = (dist_dal_max <= -0.01 or dist_dal_min >= 0.01)
+                    trigger_tecnico = (dist_dal_max <= -0.3 or dist_dal_min >= 0.3)
                     trigger_massivo = not primo_giro_completato
                     
                     if trigger_tecnico or trigger_massivo:
@@ -570,25 +616,30 @@ def _loop_principale(mode, callbacks, param_iniziali):
                             sentiment, ai_score, msg_ai = analizza_sentiment_ollama(ticker)
                             
                             azione = None
-                            min_threshold = 4
+                            min_threshold = 5
                             
                             # 🛡️ TREND GUARD FILTER: Protect against signals counter to the 200-day trend
-                            trend_stato = get_trend_filter(ticker)
+                            trend_stato = get_trend_filter(ticker, orizzonte)
                             
                             if sentiment == "POSITIVO" and ai_score >= min_threshold:
                                 if trend_stato == "BEARISH":
                                     custom_log(f"⚠️ TREND GUARD: Skipping BUY on {ticker} (Price below SMA200)")
+                                    memoria_asset[ticker]["quarantena"] = time.time() + 600 
                                 else:
                                     azione = "BUY"  
                             elif sentiment == "NEGATIVO" and ai_score <= -min_threshold:
                                 if trend_stato == "BULLISH":
                                     custom_log(f"⚠️ TREND GUARD: Skipping SELL on {ticker} (Price above SMA200)")
+                                    memoria_asset[ticker]["quarantena"] = time.time() + 600 
                                 else:
                                     azione = "SELL" 
                             else:
                                 # Log skipped weak signals during Phase 1 for transparency
                                 if trigger_massivo:
                                     custom_log(f"🧠 AI Scan | {ticker}: Score {ai_score}/10. Too weak (needs {min_threshold}), skipped.")
+                                
+                                # Avoid continuous spam in Phase 2 (Standard Radar)
+                                memoria_asset[ticker]["quarantena"] = time.time() + 600
                             
                             if azione:
                                 # We now pass the 'msg_ai' to be saved in the MT5 comment field
@@ -601,7 +652,10 @@ def _loop_principale(mode, callbacks, param_iniziali):
                                     memoria_asset[ticker]["impegnato"] = budget_da_usare
                                     memoria_asset[ticker]["picco_trade"] = p_eseguito
                                     time.sleep(1.0) # Anti-spam delay ONLY after successful execution
-                                    
+
+                            if trigger_massivo: # Groq API Rate Limit Protection
+                                time.sleep(3.0)
+
                         memoria_asset[ticker]["high"] = prezzo
                         memoria_asset[ticker]["low"] = prezzo
                             
@@ -635,8 +689,8 @@ def _loop_principale(mode, callbacks, param_iniziali):
                         elif profitto_netto > (costo_commissioni * 3) and diff_dal_picco <= -3.0: 
                             chiudi_ora, motivo_chiusura = True, "Long-Term Trailing Profit"
                     else:
-                        hard_take_profit = max(limite_base, costo_commissioni * 2.0)
-                        hard_stop_loss = -max(limite_base * 1.5, costo_commissioni * 2.5)
+                        hard_take_profit = max(limite_base * 1.5, costo_commissioni * 3.0) 
+                        hard_stop_loss = -max(limite_base, costo_commissioni * 1.5)
 
                         if profitto_netto >= hard_take_profit: 
                             chiudi_ora, motivo_chiusura = True, f"Target Reached (+{hard_take_profit:.1f}$)"
@@ -644,7 +698,7 @@ def _loop_principale(mode, callbacks, param_iniziali):
                             chiudi_ora, motivo_chiusura = True, f"Leverage Stop Loss ({hard_stop_loss:.1f}$)"
                         elif venerdi_sera:
                             chiudi_ora, motivo_chiusura = True, "Friday Weekend Shield"
-                        elif profitto_netto > 0 and diff_dal_picco <= -0.05: 
+                        elif profitto_netto > (costo_commissioni * 1.5) and diff_dal_picco <= -0.15: 
                             chiudi_ora, motivo_chiusura = True, "Trailing Profit Forex"
 
                     if chiudi_ora:
@@ -712,6 +766,8 @@ def _loop_principale(mode, callbacks, param_iniziali):
                         mt5.order_send({"action": mt5.TRADE_ACTION_DEAL, "symbol": pos.symbol, "volume": pos.volume, "type": mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY, "position": pos.ticket, "price": mt5.symbol_info_tick(pos.symbol).bid, "deviation": 20, "magic": pos.magic, "type_filling": mt5.ORDER_FILLING_IOC})
             
             stato_motore = "MONITORAGGIO"
+            
+            session_start_time = None
             
         else:
             if ultimo_stato_ui != False: imposta_ui(False); ultimo_stato_ui = False
