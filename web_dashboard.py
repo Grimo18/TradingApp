@@ -44,7 +44,7 @@ try:
     with open(config_path, "r") as f:
         config_data = json.load(f)
         tickers_target = config_data.get("ticker", "N/A")
-        # Aggiunge la bandiera visivamente se c'è l'Autopilot
+        # Append regional flag emoji for Autopilot asset visibility
         display_tickers = tickers_target.replace("AUTOPILOT", f"AUTOPILOT {bandiera}")
 except Exception:
     display_tickers = "Scanning configuration..."
@@ -166,12 +166,12 @@ def render_live_table():
         df_live['type'] = df_live['type'].map({0: 'BUY 🟢', 1: 'SELL 🔴'})
         df_live.rename(columns={'comment': '🤖 AI Insights'}, inplace=True)
         
-        # Funzione per colorare la colonna profitto
+        # Conditional coloring function for profit column (green/red bold)
         def color_profit(val):
             color = '#22c55e' if val > 0 else '#ef4444' if val < 0 else 'white'
             return f'color: {color}; font-weight: bold'
             
-        # Applichiamo lo stile prima di renderizzare
+        # Apply styling before rendering to dashboard
         styled_df = df_live.style.map(color_profit, subset=['profit']).format({'profit': "${:.2f}"})
         
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
